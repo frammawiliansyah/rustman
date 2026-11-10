@@ -4,6 +4,7 @@ pub mod assertions;
 pub mod codegen;
 pub mod cookies;
 pub mod data;
+pub mod docs;
 pub mod engine;
 pub mod error;
 pub mod graphql;
@@ -26,6 +27,7 @@ pub use models::telemetry::TimingMetrics;
 pub use codegen::{generate_snippet, SnippetTarget};
 pub use cookies::CookieJar;
 pub use data::IterationDataset;
+pub use docs::{HtmlDocGenerator, MarkdownDocGenerator};
 pub use engine::HttpExecutor;
 pub use error::RustmanError;
 pub use importers::{

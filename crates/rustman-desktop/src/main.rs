@@ -17,7 +17,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use rustman_core::importers::{import_openapi, import_postman};
 use rustman_core::{
-    generate_snippet, GraphQLIntrospector, HeaderPair, SseClient, WebSocketSession, Collection, Cookie, CookieJar, Environment, HistoryEntry, HttpExecutor, HttpRequest, HttpResponse, RustmanError,
+    generate_snippet, HtmlDocGenerator, MarkdownDocGenerator, GraphQLIntrospector, HeaderPair, SseClient, WebSocketSession, Collection, Cookie, CookieJar, Environment, HistoryEntry, HttpExecutor, HttpRequest, HttpResponse, RustmanError,
     SnippetTarget, SqliteStorage, TimingMetrics, VariableResolver,
 };
 use serde::{Deserialize, Serialize};
@@ -96,6 +96,24 @@ struct CodegenReply {
 }
 
 #[derive(Deserialize)]
+struct DocsRenderBody {
+    collection: Collection,
+    format: DocsFormat,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum DocsFormat {
+    Html,
+    Markdown,
+}
+
+#[derive(Serialize)]
+struct DocsRenderReply {
+    content: String,
+}
+
+#[derive(Deserialize)]
 struct GraphqlIntrospectBody {
     url: String,
     #[serde(default)]
@@ -106,6 +124,14 @@ struct GraphqlIntrospectBody {
 
 async fn graphql_introspect(Json(body): Json<GraphqlIntrospectBody>) -> ApiResult<serde_json::Value> {
     Ok(Json(GraphQLIntrospector::introspect(&body.url, &body.headers).await?))
+}
+
+async fn docs_render(Json(body): Json<DocsRenderBody>) -> Json<DocsRenderReply> {
+    let content = match body.format {
+        DocsFormat::Html => HtmlDocGenerator::generate(&body.collection),
+        DocsFormat::Markdown => MarkdownDocGenerator::generate(&body.collection),
+    };
+    Json(DocsRenderReply { content })
 }
 
 async fn codegen(Json(body): Json<CodegenBody>) -> Json<CodegenReply> {
@@ -338,6 +364,7 @@ fn build_app(storage: Arc<SqliteStorage>, dist: PathBuf) -> Router {
     let api = Router::new()
         .route("/execute", post(execute))
         .route("/codegen", post(codegen))
+        .route("/docs/render", post(docs_render))
         .route("/graphql/introspect", post(graphql_introspect))
         .route("/collections", get(list_collections).post(save_collection))
         .route("/collections/:id", delete(delete_collection))
@@ -486,6 +513,41 @@ mod tests {
         let bad = c
             .post(format!("{base}/api/codegen"))
             .json(&json!({ "target": "cobol", "request": req }))
+            .send()
+            .await
+            .unwrap();
+        assert!(bad.status().is_client_error());
+    }
+
+    #[tokio::test]
+    async fn docs_render_endpoint() {
+        let base = spawn(PathBuf::from("/nonexistent")).await;
+        let c = reqwest::Client::new();
+        let mut col = Collection {
+            id: Uuid::new_v4(),
+            name: "Docs Test".into(),
+            description: None,
+            items: vec![],
+        };
+        col.items.push(rustman_core::Item::Request(HttpRequest::new(
+            "ping",
+            rustman_core::HttpMethod::GET,
+            "https://example.com/ping",
+        )));
+        for (fmt, needle) in [("html", "<!DOCTYPE html>"), ("markdown", "# Docs Test")] {
+            let r = c
+                .post(format!("{base}/api/docs/render"))
+                .json(&json!({ "collection": col, "format": fmt }))
+                .send()
+                .await
+                .unwrap();
+            assert!(r.status().is_success());
+            let v: serde_json::Value = r.json().await.unwrap();
+            assert!(v["content"].as_str().unwrap().contains(needle));
+        }
+        let bad = c
+            .post(format!("{base}/api/docs/render"))
+            .json(&json!({ "collection": col, "format": "pdf" }))
             .send()
             .await
             .unwrap();

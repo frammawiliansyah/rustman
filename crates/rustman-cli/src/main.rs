@@ -8,7 +8,7 @@ use anyhow::{anyhow, bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use rustman_core::importers::export_postman;
 use rustman_core::{
-    AssertionType, HeaderPair, HttpExecutor, HttpMethod, HttpRequest, IterationDataset, MockServer, RequestBody, SqliteStorage,
+    AssertionType, HeaderPair, HtmlDocGenerator, HttpExecutor, MarkdownDocGenerator, HttpMethod, HttpRequest, IterationDataset, MockServer, RequestBody, SqliteStorage,
 };
 use runner::{run_collection, Reporter, RunOptions};
 
@@ -71,6 +71,17 @@ enum Command {
         #[arg(short, long, default_value_t = 8080)]
         port: u16,
     },
+    /// Generate API documentation (HTML or Markdown) from a collection
+    Doc {
+        /// Path to collection JSON (Postman v2.1, OpenAPI or Rustman format)
+        collection_path: PathBuf,
+        /// Output file path (default: stdout)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = DocFormat::Html)]
+        format: DocFormat,
+    },
     /// Send a one-shot request
     Request {
         /// HTTP method (GET, POST, ...)
@@ -83,6 +94,12 @@ enum Command {
         #[arg(short, long)]
         data: Option<String>,
     },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum DocFormat {
+    Html,
+    Markdown,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -175,6 +192,19 @@ async fn real_main() -> Result<i32> {
             println!("Press Ctrl+C to stop.");
             tokio::signal::ctrl_c().await?;
             let _ = shutdown.send(());
+            Ok(0)
+        }
+        Command::Doc { collection_path, output, format } => {
+            let collection = load::load_collection(&collection_path)?;
+            let text = match format {
+                DocFormat::Html => HtmlDocGenerator::generate(&collection),
+                DocFormat::Markdown => MarkdownDocGenerator::generate(&collection),
+            };
+            match output {
+                Some(p) => std::fs::write(&p, text)
+                    .map_err(|e| anyhow!("cannot write {}: {e}", p.display()))?,
+                None => print!("{text}"),
+            }
             Ok(0)
         }
         Command::Request { method, url, headers, data } => {
