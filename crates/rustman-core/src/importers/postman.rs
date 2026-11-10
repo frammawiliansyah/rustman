@@ -42,6 +42,11 @@ pub fn import_postman(json_str: &str) -> Result<Collection> {
     })
 }
 
+/// Alias for [`import_postman`].
+pub fn import_postman_collection(json_str: &str) -> Result<Collection> {
+    import_postman(json_str)
+}
+
 fn description_of(v: Option<&Value>) -> Option<String> {
     match v? {
         Value::String(s) if !s.is_empty() => Some(s.clone()),
@@ -320,6 +325,11 @@ pub fn export_postman(collection: &Collection) -> Result<String> {
     Ok(serde_json::to_string_pretty(&export_postman_value(collection))?)
 }
 
+/// Alias for [`export_postman`].
+pub fn export_postman_collection(collection: &Collection) -> Result<String> {
+    export_postman(collection)
+}
+
 fn export_items(items: &[Item]) -> Vec<Value> {
     items
         .iter()
@@ -365,7 +375,11 @@ fn export_url(r: &HttpRequest) -> Value {
         .map(|q| format!("{}={}", q.key, q.value))
         .collect();
     if !enabled.is_empty() {
-        raw.push('?');
+        if raw.contains('?') {
+            raw.push('&');
+        } else {
+            raw.push('?');
+        }
         raw.push_str(&enabled.join("&"));
     }
     let mut url = json!({ "raw": raw });
@@ -389,8 +403,10 @@ fn export_url(r: &HttpRequest) -> Value {
     if let Some(p) = port {
         url["port"] = json!(p);
     }
-    if !path.is_empty() {
-        url["path"] = json!(path.split('/').collect::<Vec<_>>());
+    let (path_only, _) = path.split_once('?').unwrap_or((path, ""));
+    let path_segments: Vec<&str> = path_only.split('/').filter(|s| !s.is_empty()).collect();
+    if !path_segments.is_empty() {
+        url["path"] = json!(path_segments);
     }
     if !r.query_params.is_empty() {
         url["query"] = Value::Array(
@@ -704,5 +720,21 @@ mod tests {
         assert_eq!(v["item"][0]["request"]["method"], "DELETE");
         assert_eq!(v["item"][0]["request"]["body"]["options"]["raw"]["language"], "text");
         assert_eq!(v["item"][0]["request"]["auth"]["apikey"][2]["value"], "header");
+    }
+
+    #[test]
+    fn aliases_and_query_merge() {
+        let mut r = HttpRequest::new("Search", HttpMethod::GET, "https://api.example.com/search?base=1");
+        r.query_params = vec![QueryParam { key: "extra".into(), value: "2".into(), enabled: true }];
+        let c = Collection {
+            id: Uuid::new_v4(),
+            name: "SearchCol".into(),
+            description: Some("desc".into()),
+            items: vec![Item::Request(r)],
+        };
+        let exported = export_postman_collection(&c).unwrap();
+        assert!(exported.contains("https://api.example.com/search?base=1&extra=2"));
+        let imported = import_postman_collection(&exported).unwrap();
+        assert_eq!(imported.name, "SearchCol");
     }
 }

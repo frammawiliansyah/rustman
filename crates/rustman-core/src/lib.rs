@@ -16,4 +16,8 @@ pub use models::http::{
 pub use models::telemetry::TimingMetrics;
 pub use engine::HttpExecutor;
 pub use error::RustmanError;
+pub use importers::{
+    export_postman, export_postman_collection, import_openapi, import_openapi_spec, import_postman,
+    import_postman_collection,
+};
 pub use variables::VariableResolver;

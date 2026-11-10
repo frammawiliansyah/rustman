@@ -99,6 +99,11 @@ pub fn import_openapi(json_str: &str) -> Result<Collection> {
     Ok(Collection { id: Uuid::new_v4(), name, description, items })
 }
 
+/// Alias for [`import_openapi`].
+pub fn import_openapi_spec(json_str: &str) -> Result<Collection> {
+    import_openapi(json_str)
+}
+
 fn tag_description(root: &Value, tag: &str) -> Option<String> {
     root.get("tags")?.as_array()?.iter().find_map(|t| {
         (t.get("name")?.as_str()? == tag)
@@ -135,7 +140,12 @@ fn build_request(
         .or_else(|| op.get("operationId").and_then(Value::as_str))
         .map(String::from)
         .unwrap_or_else(|| format!("{} {}", format!("{method:?}"), path));
-    let url = format!("{base}{path}");
+    let clean_path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    };
+    let url = format!("{base}{clean_path}");
     let mut req = HttpRequest::new(name, method, url);
 
     // Path-level parameters first; operation-level override by (in, name).
@@ -505,9 +515,9 @@ mod tests {
 
     #[test]
     fn openapi_exports_to_postman() {
-        let c = import_openapi(SPEC).unwrap();
-        let out = crate::importers::postman::export_postman(&c).unwrap();
-        let back = crate::importers::postman::import_postman(&out).unwrap();
+        let c = import_openapi_spec(SPEC).unwrap();
+        let out = crate::importers::postman::export_postman_collection(&c).unwrap();
+        let back = crate::importers::postman::import_postman_collection(&out).unwrap();
         assert_eq!(back.name, "Pet Store");
         assert!(find(&back.items, "createPet").is_some());
     }
