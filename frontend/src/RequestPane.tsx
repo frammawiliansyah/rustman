@@ -3,14 +3,14 @@ import { KVEditor } from "./KVEditor";
 import type { AuthConfig, HttpRequest, KV, Method, RequestBody } from "./types";
 
 const METHODS: Method[] = ["GET", "POST", "PUT", "DELETE", "PATCH"];
-type Tab = "params" | "headers" | "auth" | "body";
+type Tab = "params" | "headers" | "auth" | "body" | "pre" | "tests";
 
 const authKind = (a: AuthConfig) => (a === "None" ? "None" : (Object.keys(a)[0] as "Bearer" | "Basic" | "ApiKey"));
 const bodyKind = (b: RequestBody) =>
   b === "None" ? "None" : "Raw" in b ? "JSON" : "FormUrlEncoded" in b ? "FormUrlEncoded" : "FormData";
 
-export function RequestPane({ req, onChange, onSend, sending }: {
-  req: HttpRequest; onChange: (r: HttpRequest) => void; onSend: () => void; sending: boolean;
+export function RequestPane({ req, onChange, onSend, sending, onCode, onCookies }: {
+  req: HttpRequest; onChange: (r: HttpRequest) => void; onSend: () => void; sending: boolean; onCode: () => void; onCookies: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("params");
   const patch = (p: Partial<HttpRequest>) => onChange({ ...req, ...p });
@@ -49,6 +49,8 @@ export function RequestPane({ req, onChange, onSend, sending }: {
           onKeyDown={(e) => e.key === "Enter" && onSend()}
         />
         <button className="send" disabled={sending || !req.url.trim()} onClick={onSend}>{sending ? "Sending…" : "Send"}</button>
+        <button className="code-btn" title="Generate code snippet" onClick={onCode}>{"</>"} Code</button>
+        <button title="Manage cookies" onClick={onCookies}>Cookies</button>
       </div>
       <div className="tabs">
         {([
@@ -56,6 +58,8 @@ export function RequestPane({ req, onChange, onSend, sending }: {
           ["headers", `Headers${enabledCount(req.headers) ? ` (${enabledCount(req.headers)})` : ""}`],
           ["auth", "Auth"],
           ["body", "Body"],
+          ["pre", `Pre-request Script${req.pre_request_script?.trim() ? " •" : ""}`],
+          ["tests", `Tests${req.test_script?.trim() ? " •" : ""}`],
         ] as [Tab, string][]).map(([k, label]) => (
           <button key={k} className={tab === k ? "active" : ""} onClick={() => setTab(k)}>{label}</button>
         ))}
@@ -63,6 +67,16 @@ export function RequestPane({ req, onChange, onSend, sending }: {
       <div className="tab-body">
         {tab === "params" && <KVEditor rows={req.query_params} onChange={(query_params) => patch({ query_params })} />}
         {tab === "headers" && <KVEditor rows={req.headers} onChange={(headers) => patch({ headers })} />}
+        {tab === "pre" && (
+          <textarea className="editor script" spellCheck={false} value={req.pre_request_script ?? ""}
+            placeholder={'// Runs before the request is sent\npm.environment.set("token", "abc123");'}
+            onChange={(e) => patch({ pre_request_script: e.target.value || null })} />
+        )}
+        {tab === "tests" && (
+          <textarea className="editor script" spellCheck={false} value={req.test_script ?? ""}
+            placeholder={'// Runs after the response is received\npm.test("Status is 200", () => {\n  pm.expect(pm.response.code).to.equal(200);\n});'}
+            onChange={(e) => patch({ test_script: e.target.value || null })} />
+        )}
         {tab === "auth" && (
           <div className="form">
             <label>Type

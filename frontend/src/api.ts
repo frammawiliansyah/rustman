@@ -1,4 +1,4 @@
-import type { Collection, Environment, ExecuteReply, HistoryEntry, HttpRequest } from "./types";
+import type { Collection, Cookie, SnippetTarget, Environment, ExecuteReply, HistoryEntry, HttpRequest } from "./types";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, init);
@@ -28,5 +28,11 @@ export const api = {
   deleteEnvironment: (id: string) => call<void>(`/environments/${id}`, { method: "DELETE" }),
   history: () => call<HistoryEntry[]>("/history"),
   importPostman: (raw: string) => call<Collection>("/import/postman", { method: "POST", body: raw }),
+  codegen: (target: SnippetTarget, request: HttpRequest) =>
+    call<{ code: string }>("/codegen", json("POST", { target, request })),
+  cookies: () => call<Cookie[]>("/cookies"),
+  saveCookie: (c: Cookie) => call<Cookie>("/cookies", json("POST", c)),
+  deleteCookie: (domain: string, name: string) =>
+    call<void>(`/cookies?domain=${encodeURIComponent(domain)}&name=${encodeURIComponent(name)}`, { method: "DELETE" }),
   importOpenapi: (raw: string) => call<Collection>("/import/openapi", { method: "POST", body: raw }),
 };

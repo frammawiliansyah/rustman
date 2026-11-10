@@ -24,6 +24,8 @@ export interface HttpRequest {
   query_params: KV[];
   body: RequestBody;
   auth: AuthConfig;
+  pre_request_script?: string | null;
+  test_script?: string | null;
 }
 
 export interface HttpResponse {
@@ -61,4 +63,15 @@ export interface HistoryEntry {
   request: HttpRequest;
   response: HttpResponse;
   created_at: string;
+}
+
+export type SnippetTarget = "curl" | "javascript" | "python" | "go" | "rust";
+
+export interface Cookie {
+  name: string; value: string; domain: string; path: string;
+  expires?: string | null; http_only: boolean; secure: boolean;
+}
+
+export interface WsMessage {
+  direction: "In" | "Out"; payload_type: "Text" | "Binary"; content: string; timestamp: string;
 }

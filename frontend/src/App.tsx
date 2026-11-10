@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import { CodeModal } from "./CodeModal";
+import { CookieManager } from "./CookieManager";
+import { RealtimePane } from "./RealtimePane";
 import { EnvEditor } from "./EnvEditor";
 import { RequestPane } from "./RequestPane";
 import { ResponsePane } from "./ResponsePane";
@@ -21,6 +24,9 @@ export default function App() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [envId, setEnvId] = useState<string | null>(null);
   const [showEnv, setShowEnv] = useState(false);
+  const [showCode, setShowCode] = useState(false);
+  const [showCookies, setShowCookies] = useState(false);
+  const [mode, setMode] = useState<"http" | "ws" | "sse">("http");
 
   const refresh = useCallback(async () => {
     try {
@@ -58,12 +64,24 @@ export default function App() {
       />
       <main className="main">
         <div className="topbar">
+          <div className="mode-switch">
+            {([["http", "HTTP Request"], ["ws", "WebSocket"], ["sse", "Server-Sent Events"]] as const).map(([k, l]) => (
+              <button key={k} className={mode === k ? "active" : ""} onClick={() => setMode(k)}>{l}</button>
+            ))}
+          </div>
+          {mode === "http" && <>
           <input className="req-name" value={req.name} onChange={(e) => setReq({ ...req, name: e.target.value })} />
           <button className="link" onClick={() => open(blank())}>+ New request</button>
+          </>}
         </div>
-        <RequestPane req={req} onChange={setReq} onSend={send} sending={sending} />
-        <ResponsePane reply={reply} error={error} loading={sending} />
+        {mode === "http" ? (<>
+          <RequestPane req={req} onChange={setReq} onSend={send} sending={sending}
+            onCode={() => setShowCode(true)} onCookies={() => setShowCookies(true)} />
+          <ResponsePane reply={reply} error={error} loading={sending} />
+        </>) : <RealtimePane key={mode} kind={mode} />}
       </main>
+      {showCode && <CodeModal req={req} onClose={() => setShowCode(false)} />}
+      {showCookies && <CookieManager onClose={() => setShowCookies(false)} />}
       {showEnv && <EnvEditor environments={environments} onClose={() => setShowEnv(false)} onChanged={refresh} />}
     </div>
   );
