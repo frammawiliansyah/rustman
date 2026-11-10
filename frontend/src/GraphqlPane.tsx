@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { api } from "./api";
-import { JsonView } from "./JsonView";
+import { Database, Play, Terminal } from "lucide-react";
+import { CodeEditor } from "./CodeEditor";
+import { Modal, Spinner, Tabs } from "./ui";
 import { KVEditor } from "./KVEditor";
 import type { GqlSchema, HttpRequest, KV } from "./types";
 
@@ -10,7 +12,7 @@ function SchemaViewer({ schema, onClose }: { schema: GqlSchema; onClose: () => v
   const list = (title: string, fields: GqlSchema["queries"]) => (
     <section>
       <h4>{title} ({fields.length})</h4>
-      {fields.length === 0 ? <div className="muted">None</div> : (
+      {fields.length === 0 ? <div className="hint">None</div> : (
         <ul className="schema-list">{fields.map((f) => (
           <li key={f.name}><code>{f.name}</code>{f.type && <span className="muted">: {f.type.name ?? f.type.kind}</span>}</li>
         ))}</ul>
@@ -19,27 +21,22 @@ function SchemaViewer({ schema, onClose }: { schema: GqlSchema; onClose: () => v
   );
   const types = schema.types.filter((t) => !t.name.startsWith("__"));
   return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head"><b>GraphQL Schema</b><button className="icon" onClick={onClose}>×</button></div>
-        <div className="modal-body block">
-          {list("Queries", schema.queries)}
-          {list("Mutations", schema.mutations)}
-          <section>
-            <h4>Types ({types.length})</h4>
-            {types.map((t) => (
-              <details key={t.name}>
-                <summary><code>{t.name}</code> <span className="muted">{t.kind}</span></summary>
-                {t.description && <div className="muted">{t.description}</div>}
-                <ul className="schema-list">{(t.fields ?? []).map((f) => (
-                  <li key={f.name}><code>{f.name}</code>{f.type && <span className="muted">: {f.type.name ?? f.type.kind}</span>}</li>
-                ))}</ul>
-              </details>
-            ))}
-          </section>
-        </div>
-      </div>
-    </div>
+    <Modal title="GraphQL Schema" icon={Database} size="wide" onClose={onClose}>
+      {list("Queries", schema.queries)}
+      {list("Mutations", schema.mutations)}
+      <section>
+        <h4>Types ({types.length})</h4>
+        {types.map((t) => (
+          <details key={t.name}>
+            <summary><code>{t.name}</code> <span className="muted">{t.kind}</span></summary>
+            {t.description && <div className="muted">{t.description}</div>}
+            <ul className="schema-list">{(t.fields ?? []).map((f) => (
+              <li key={f.name}><code>{f.name}</code>{f.type && <span className="muted">: {f.type.name ?? f.type.kind}</span>}</li>
+            ))}</ul>
+          </details>
+        ))}
+      </section>
+    </Modal>
   );
 }
 
@@ -90,36 +87,47 @@ export function GraphqlPane({ envId }: { envId: string | null }) {
   let result: { data?: unknown; errors?: unknown } | null = null;
   if (body) { try { result = JSON.parse(body); } catch { /* raw */ } }
 
+  const pretty = (v: unknown) => JSON.stringify(v, null, 2);
+  let display = "";
+  if (body !== null) {
+    display = result
+      ? pretty({ ...(result.errors != null ? { errors: result.errors } : {}), ...(result.data !== undefined ? { data: result.data } : {}) })
+      : body;
+  }
+
   return (
     <div className="gql">
       <div className="urlbar">
-        <input className="url" value={url} placeholder="GraphQL endpoint URL" onChange={(e) => setUrl(e.target.value)} />
-        <button disabled={!valid || busy} onClick={introspect}>Introspect Schema</button>
-        <button className="send" disabled={!valid || busy || !query.trim()} onClick={run}>{busy ? "Running…" : "Run Query"}</button>
+        <div className="url-field">
+          <span className="url-tag"><Database size={13} />GraphQL</span>
+          <input className="url" value={url} spellCheck={false} placeholder="GraphQL endpoint URL" onChange={(e) => setUrl(e.target.value)} />
+        </div>
+        <button className="btn" disabled={!valid || busy} onClick={introspect}><Database size={14} />Introspect</button>
+        <button className="btn primary send" disabled={!valid || busy || !query.trim()} onClick={run}>
+          {busy ? <Spinner /> : <Play size={14} />}{busy ? "Running…" : "Run Query"}
+        </button>
       </div>
       {error && <div className="error-text">{error}</div>}
       <div className="gql-grid">
         <div className="gql-left">
-          <label className="muted">Query / Mutation</label>
-          <textarea className="editor gql-query" spellCheck={false} value={query} onChange={(e) => setQuery(e.target.value)} />
-          <div className="tabs">
-            <button className={tab === "variables" ? "active" : ""} onClick={() => setTab("variables")}>Query Variables</button>
-            <button className={tab === "headers" ? "active" : ""} onClick={() => setTab("headers")}>Headers ({headers.filter((h) => h.enabled && h.key).length})</button>
-          </div>
-          <div className="tab-body">
+          <div className="section-label"><Terminal size={13} />Query / Mutation</div>
+          <div className="gql-query"><CodeEditor language="graphql" value={query} onChange={setQuery} /></div>
+          <Tabs value={tab} onChange={setTab} items={[
+            { key: "variables", label: "Query Variables" },
+            { key: "headers", label: "Headers", badge: headers.filter((h) => h.enabled && h.key).length || "" },
+          ]} />
+          <div className={`tab-body${tab === "variables" ? " fill" : ""}`}>
             {tab === "variables"
-              ? <textarea className="editor" spellCheck={false} value={vars} onChange={(e) => setVars(e.target.value)} />
+              ? <CodeEditor language="json" value={vars} onChange={setVars} />
               : <KVEditor rows={headers} onChange={setHeaders} />}
           </div>
         </div>
         <div className="gql-right">
-          <div className="resp-meta"><b>Response</b>{status && <span>{status}</span>}</div>
-          <div className="tab-body">
-            {body === null ? <div className="muted">Run a query to see the response.</div>
-              : result ? (<>
-                {result.errors != null && <><h4 className="bad">errors</h4><JsonView text={JSON.stringify(result.errors)} /></>}
-                {result.data !== undefined && <><h4>data</h4><JsonView text={JSON.stringify(result.data)} /></>}
-              </>) : <JsonView text={body} />}
+          <div className="resp-meta"><span className="section-label">Response</span>{status && <span className="chip ok"><i className="pulse" />{status}</span>}</div>
+          <div className="tab-body fill">
+            {body === null
+              ? <div className="empty-note"><Terminal size={22} /><p>Run a query to see the response.</p></div>
+              : <CodeEditor language="json" value={display} readOnly />}
           </div>
         </div>
       </div>

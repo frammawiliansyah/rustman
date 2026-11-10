@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Globe, Plus, Radio, Terminal, Zap } from "lucide-react";
 import { api } from "./api";
 import { CodeModal } from "./CodeModal";
 import { CookieManager } from "./CookieManager";
@@ -8,6 +9,7 @@ import { EnvEditor } from "./EnvEditor";
 import { RequestPane } from "./RequestPane";
 import { ResponsePane } from "./ResponsePane";
 import { Sidebar } from "./Sidebar";
+import { Tabs } from "./ui";
 import type { Collection, Environment, ExecuteReply, HistoryEntry, HttpRequest } from "./types";
 
 const blank = (): HttpRequest => ({
@@ -65,14 +67,13 @@ export default function App() {
       />
       <main className="main">
         <div className="topbar">
-          <div className="mode-switch">
-            {([["http", "HTTP Request"], ["ws", "WebSocket"], ["sse", "Server-Sent Events"], ["graphql", "GraphQL"]] as const).map(([k, l]) => (
-              <button key={k} className={mode === k ? "active" : ""} onClick={() => setMode(k)}>{l}</button>
-            ))}
-          </div>
+          <Tabs variant="pill" value={mode} onChange={setMode} items={[
+            { key: "http", label: "HTTP", icon: Globe }, { key: "ws", label: "WebSocket", icon: Radio },
+            { key: "sse", label: "SSE", icon: Zap }, { key: "graphql", label: "GraphQL", icon: Terminal },
+          ]} />
           {mode === "http" && <>
           <input className="req-name" value={req.name} onChange={(e) => setReq({ ...req, name: e.target.value })} />
-          <button className="link" onClick={() => open(blank())}>+ New request</button>
+          <button className="btn ghost sm" onClick={() => open(blank())}><Plus size={14} />New request</button>
           </>}
         </div>
         {mode === "http" ? (<>

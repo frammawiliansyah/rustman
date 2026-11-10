@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
+import { Play, Square, Upload } from "lucide-react";
 import { api } from "./api";
+import { Modal, MethodBadge, Spinner } from "./ui";
 import type { Environment, HttpRequest, Item } from "./types";
 
 type Row = Record<string, string>;
@@ -110,62 +112,57 @@ export function RunnerModal(p: { title: string; items: Item[]; environments: Env
   const nFailed = results.filter(failed).length;
 
   return (
-    <div className="modal-bg" onClick={() => !running && p.onClose()}>
-      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head"><b>Run — {p.title}</b><button className="icon" disabled={running} onClick={p.onClose}>×</button></div>
-        <div className="modal-body block">
-          <div className="runner-form">
-            <label>Environment
-              <select value={envId ?? ""} disabled={running} onChange={(e) => setEnvId(e.target.value || null)}>
-                <option value="">No environment</option>
-                {p.environments.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-            </label>
-            <label>Iterations
-              <input type="number" min={1} value={iterations} disabled={running}
-                onChange={(e) => setIterations(Number(e.target.value))} />
-            </label>
-            <label>Delay per request (ms)
-              <input type="number" min={0} value={delay} disabled={running}
-                onChange={(e) => setDelay(Math.max(0, Number(e.target.value)))} />
-            </label>
-            <label>Iteration data (.csv / .json)
-              <input type="file" accept=".csv,.json" disabled={running} onChange={(e) => onFile(e.target.files?.[0])} />
-            </label>
-            <label className="chk"><input type="checkbox" checked={bail} disabled={running} onChange={(e) => setBail(e.target.checked)} /> Bail on error</label>
-          </div>
-          {data && <div className="muted">{data.name}: {data.rows.length} row(s); rows cycle if iterations exceed row count.</div>}
-          {err && <div className="error-text">{err}</div>}
-          <div className="actions">
-            <button className="send" disabled={running || steps.length === 0} onClick={start}>
-              {running ? "Running…" : "Start Run"}
-            </button>
-            {running && <button onClick={() => { stop.current = true; }}>Stop</button>}
-            <span className="muted">{steps.length} request(s) × {Math.max(1, Math.floor(iterations) || 1)} iteration(s)</span>
-          </div>
-          {(running || results.length > 0) && (<>
-            <progress className="run-progress" max={total} value={results.length} />
-            <table className="cookie-table">
-              <thead><tr><th>#</th><th>Iter</th><th>Request</th><th>Status</th><th>Time</th></tr></thead>
-              <tbody>{results.map((r) => (
-                <tr key={r.n}>
-                  <td>{r.n}</td><td>{r.iteration}</td>
-                  <td>{r.path}<div className="muted" style={{ padding: 0 }}>{r.method} {r.url}</div></td>
-                  <td className={failed(r) ? "bad" : "ok"}>{r.error ? `Error: ${r.error}` : r.status}</td>
-                  <td>{r.ms != null ? `${r.ms} ms` : ""}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </>)}
-          {done && (
-            <div className="run-summary">
-              <b>Summary:</b> <span className="ok">{results.length - nFailed} passed</span>, <span className={nFailed ? "bad" : ""}>{nFailed} failed</span> of {results.length} executed
-              {done.bailed && " — stopped early (bail on error)"}{done.stopped && " — stopped by user"}
-              <div className="muted" style={{ padding: 0 }}>A request passes when it gets a response with status &lt; 400.</div>
-            </div>
-          )}
-        </div>
+    <Modal title={`Run — ${p.title}`} icon={Play} size="wide" dismissible={!running} onClose={p.onClose}>
+      <div className="runner-form">
+        <label>Environment
+          <select value={envId ?? ""} disabled={running} onChange={(e) => setEnvId(e.target.value || null)}>
+            <option value="">No environment</option>
+            {p.environments.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+        </label>
+        <label>Iterations
+          <input type="number" min={1} value={iterations} disabled={running}
+            onChange={(e) => setIterations(Number(e.target.value))} />
+        </label>
+        <label>Delay per request (ms)
+          <input type="number" min={0} value={delay} disabled={running}
+            onChange={(e) => setDelay(Math.max(0, Number(e.target.value)))} />
+        </label>
+        <label><span><Upload size={11} /> Iteration data (.csv / .json)</span>
+          <input type="file" accept=".csv,.json" disabled={running} onChange={(e) => onFile(e.target.files?.[0])} />
+        </label>
+        <label className="chk"><input type="checkbox" checked={bail} disabled={running} onChange={(e) => setBail(e.target.checked)} /> Bail on error</label>
       </div>
-    </div>
+      {data && <div className="hint">{data.name}: {data.rows.length} row(s); rows cycle if iterations exceed row count.</div>}
+      {err && <div className="error-text">{err}</div>}
+      <div className="actions">
+        <button className="btn primary" disabled={running || steps.length === 0} onClick={start}>
+          {running ? <Spinner /> : <Play size={14} />}{running ? "Running…" : "Start Run"}
+        </button>
+        {running && <button className="btn" onClick={() => { stop.current = true; }}><Square size={13} />Stop</button>}
+        <span className="hint">{steps.length} request(s) × {Math.max(1, Math.floor(iterations) || 1)} iteration(s)</span>
+      </div>
+      {(running || results.length > 0) && (<>
+        <progress className="run-progress" max={total} value={results.length} />
+        <table className="data-table">
+          <thead><tr><th>#</th><th>Iter</th><th>Request</th><th>Status</th><th>Time</th></tr></thead>
+          <tbody>{results.map((r) => (
+            <tr key={r.n}>
+              <td>{r.n}</td><td>{r.iteration}</td>
+              <td>{r.path}<div className="hint sub"><MethodBadge method={r.method} /> {r.url}</div></td>
+              <td><span className={`chip tiny ${failed(r) ? "bad" : "ok"}`}>{r.error ? `Error: ${r.error}` : r.status}</span></td>
+              <td>{r.ms != null ? `${r.ms} ms` : ""}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </>)}
+      {done && (
+        <div className="run-summary">
+          <b>Summary:</b> <span className="ok">{results.length - nFailed} passed</span>, <span className={nFailed ? "bad" : ""}>{nFailed} failed</span> of {results.length} executed
+          {done.bailed && " — stopped early (bail on error)"}{done.stopped && " — stopped by user"}
+          <div className="hint">A request passes when it gets a response with status &lt; 400.</div>
+        </div>
+      )}
+    </Modal>
   );
 }

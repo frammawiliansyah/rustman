@@ -1,46 +1,35 @@
 import { useEffect, useState } from "react";
+import { Code2 } from "lucide-react";
 import { api } from "./api";
+import { CodeEditor } from "./CodeEditor";
+import { CopyButton, Modal, Tabs } from "./ui";
 import type { HttpRequest, SnippetTarget } from "./types";
 
-const TARGETS: [SnippetTarget, string][] = [
-  ["curl", "cURL"], ["javascript", "JavaScript Fetch"], ["python", "Python Requests"],
-  ["go", "Go net/http"], ["rust", "Rust reqwest"],
+const TARGETS: [SnippetTarget, string, string][] = [
+  ["curl", "cURL", "shell"], ["javascript", "JavaScript Fetch", "javascript"], ["python", "Python Requests", "python"],
+  ["go", "Go net/http", "go"], ["rust", "Rust reqwest", "rust"],
 ];
 
 export function CodeModal({ req, onClose }: { req: HttpRequest; onClose: () => void }) {
   const [target, setTarget] = useState<SnippetTarget>("curl");
   const [code, setCode] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let live = true;
-    setErr(null); setCopied(false);
+    setErr(null);
     api.codegen(target, req)
       .then((r) => live && setCode(r.code))
       .catch((e) => live && (setCode(""), setErr((e as Error).message)));
     return () => { live = false; };
   }, [target, req]);
 
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1500); }
-    catch { setErr("Clipboard unavailable"); }
-  };
-
   return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head"><b>Code snippet</b><button className="icon" onClick={onClose}>×</button></div>
-        <div className="modal-body block">
-          <div className="tabs">
-            {TARGETS.map(([k, l]) => (
-              <button key={k} className={target === k ? "active" : ""} onClick={() => setTarget(k)}>{l}</button>
-            ))}
-          </div>
-          {err ? <div className="error-text">{err}</div> : <pre className="code snippet">{code}</pre>}
-          <div className="actions"><button onClick={copy} disabled={!code}>{copied ? "Copied!" : "Copy to Clipboard"}</button></div>
-        </div>
-      </div>
-    </div>
+    <Modal title="Code snippet" icon={Code2} size="wide" onClose={onClose} actions={<CopyButton text={code} label="Copy" />}>
+      <Tabs value={target} onChange={setTarget} items={TARGETS.map(([key, label]) => ({ key, label }))} />
+      {err ? <div className="error-text">{err}</div> : (
+        <div className="snippet"><CodeEditor language={TARGETS.find((t) => t[0] === target)![2]} value={code} readOnly wrap /></div>
+      )}
+    </Modal>
   );
 }

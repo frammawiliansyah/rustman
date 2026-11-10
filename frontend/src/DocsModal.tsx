@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { BookOpen, ExternalLink, FileDown, FileText } from "lucide-react";
 import { api } from "./api";
+import { Modal, Spinner } from "./ui";
 import { download } from "./download";
 import type { Collection } from "./types";
 
@@ -29,22 +31,15 @@ export function DocsModal({ collection, onClose }: { collection: Collection; onC
   };
 
   return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal docs" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <b>API Docs — {collection.name}</b>
-          <span className="actions" style={{ margin: 0 }}>
-            <button disabled={html === null} onClick={openTab}>Open in new tab</button>
-            <button onClick={() => exportAs("markdown")}>Export Markdown</button>
-            <button disabled={html === null} onClick={() => exportAs("html")}>Export HTML</button>
-            <button className="icon" onClick={onClose}>×</button>
-          </span>
-        </div>
-        {err ? <div className="error-text" style={{ padding: 12 }}>{err}</div>
-          : html === null ? <div className="muted">Rendering…</div>
-          // Empty sandbox: generated docs embed user-supplied text, so no scripts or same-origin access.
-          : <iframe className="docs-frame" title="docs" sandbox="" srcDoc={html} />}
-      </div>
-    </div>
+    <Modal title={`API Docs — ${collection.name}`} icon={BookOpen} size="docs" flush onClose={onClose} actions={<>
+      <button className="btn sm" disabled={html === null} onClick={openTab}><ExternalLink size={13} />New tab</button>
+      <button className="btn sm" onClick={() => exportAs("markdown")}><FileText size={13} />Markdown</button>
+      <button className="btn sm" disabled={html === null} onClick={() => exportAs("html")}><FileDown size={13} />HTML</button>
+    </>}>
+      {err ? <div className="error-text" style={{ padding: 16 }}>{err}</div>
+        : html === null ? <div className="empty-note"><Spinner size={20} /><p>Rendering…</p></div>
+        // Empty sandbox: generated docs embed user-supplied text, so no scripts or same-origin access.
+        : <iframe className="docs-frame" title="docs" sandbox="" srcDoc={html} />}
+    </Modal>
   );
 }

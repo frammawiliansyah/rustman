@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Plug, PlugZap, Send, Trash2, Wifi } from "lucide-react";
+import { Spinner } from "./ui";
 import type { WsMessage } from "./types";
 
 interface Entry { id: number; dir: "in" | "out" | "sys"; label: string; text: string; time: string }
@@ -73,18 +75,21 @@ export function RealtimePane({ kind }: { kind: "ws" | "sse" }) {
   return (
     <div className="rt">
       <div className="urlbar">
-        <input className="url" value={url} disabled={active} placeholder={isWs ? "ws:// or wss://" : "http:// or https://"}
-          onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !active && valid && connect()} />
+        <div className="url-field">
+          <span className="url-tag"><Wifi size={13} />{isWs ? "WS" : "SSE"}</span>
+          <input className="url" value={url} disabled={active} spellCheck={false} placeholder={isWs ? "ws:// or wss://" : "http:// or https://"}
+            onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !active && valid && connect()} />
+        </div>
         {active
-          ? <button className="send" onClick={disconnect}>{isWs ? "Disconnect" : "Close"}</button>
-          : <button className="send" disabled={!valid} onClick={connect}>{isWs ? "Connect" : "Listen"}</button>}
-        <button onClick={() => setLog([])}>Clear</button>
+          ? <button className="btn danger" onClick={disconnect}>{connecting && !connected ? <Spinner /> : <Plug size={14} />}{isWs ? "Disconnect" : "Close"}</button>
+          : <button className="btn primary send" disabled={!valid} onClick={connect}><PlugZap size={14} />{isWs ? "Connect" : "Listen"}</button>}
+        <button className="btn" onClick={() => setLog([])}><Trash2 size={14} />Clear</button>
       </div>
-      <div className="muted" style={{ padding: 0 }}>
+      <div className="hint">
         <span className={`status-dot${connected ? " on" : ""}`} />{connected ? "Connected" : connecting ? "Connecting…" : "Not connected"}
       </div>
       <div className="rt-log">
-        {log.length === 0 && <div className="muted">{isWs ? "Messages will appear here." : "Events will appear here."}</div>}
+        {log.length === 0 && <div className="hint">{isWs ? "Messages will appear here." : "Events will appear here."}</div>}
         {log.map((e) => (
           <div className="rt-item" key={e.id}>
             <span className={`dir ${e.dir}`}>{e.label}</span>
@@ -98,7 +103,7 @@ export function RealtimePane({ kind }: { kind: "ws" | "sse" }) {
         <div className="rt-send">
           <input placeholder="Message" value={msg} disabled={!connected} onChange={(e) => setMsg(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()} />
-          <button className="send" disabled={!connected || !msg} onClick={send}>Send</button>
+          <button className="btn primary" disabled={!connected || !msg} onClick={send}><Send size={14} />Send</button>
         </div>
       )}
     </div>
