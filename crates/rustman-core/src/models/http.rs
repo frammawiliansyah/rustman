@@ -78,6 +78,12 @@ pub struct HttpRequest {
     pub body: RequestBody,
     #[serde(default)]
     pub auth: AuthConfig,
+    /// Script executed before the request is sent (Postman `pm.*` API).
+    #[serde(default)]
+    pub pre_request_script: Option<String>,
+    /// Script executed after the response is received (Postman `pm.*` API).
+    #[serde(default)]
+    pub test_script: Option<String>,
 }
 
 impl HttpRequest {
@@ -91,6 +97,8 @@ impl HttpRequest {
             query_params: Vec::new(),
             body: RequestBody::None,
             auth: AuthConfig::None,
+            pre_request_script: None,
+            test_script: None,
         }
     }
 }

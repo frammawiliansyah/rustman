@@ -17,11 +17,19 @@ pub enum RustmanError {
     InvalidRequest(String),
     #[error("storage error: {0}")]
     StorageError(String),
+    #[error("script error: {0}")]
+    ScriptError(String),
 }
 
 impl From<rusqlite::Error> for RustmanError {
     fn from(e: rusqlite::Error) -> Self {
         RustmanError::StorageError(e.to_string())
+    }
+}
+
+impl From<boa_engine::JsError> for RustmanError {
+    fn from(e: boa_engine::JsError) -> Self {
+        RustmanError::ScriptError(e.to_string())
     }
 }
 

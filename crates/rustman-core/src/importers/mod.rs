@@ -3,5 +3,8 @@
 pub mod openapi;
 pub mod postman;
 
-pub use openapi::import_openapi;
-pub use postman::{export_postman, import_postman};
+pub use openapi::{import_openapi, import_openapi_spec};
+pub use postman::{
+    export_postman, export_postman_collection, export_postman_value, import_postman,
+    import_postman_collection,
+};

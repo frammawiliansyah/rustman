@@ -6,6 +6,7 @@ pub mod error;
 pub mod importers;
 pub mod models;
 pub mod storage;
+pub mod scripting;
 pub mod variables;
 
 pub use models::assertion::{AssertionResult, AssertionType};
@@ -17,5 +18,10 @@ pub use models::http::{
 pub use models::telemetry::TimingMetrics;
 pub use engine::HttpExecutor;
 pub use error::RustmanError;
+pub use importers::{
+    export_postman, export_postman_collection, import_openapi, import_openapi_spec, import_postman,
+    import_postman_collection,
+};
 pub use variables::VariableResolver;
 pub use storage::{HistoryEntry, SqliteStorage};
+pub use scripting::{ScriptOutput, ScriptRuntime, ScriptScope};
