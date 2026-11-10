@@ -8,7 +8,7 @@ use anyhow::{anyhow, bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use rustman_core::importers::export_postman;
 use rustman_core::{
-    AssertionType, HeaderPair, HttpExecutor, HttpMethod, HttpRequest, RequestBody, SqliteStorage,
+    AssertionType, HeaderPair, HttpExecutor, HttpMethod, HttpRequest, MockServer, RequestBody, SqliteStorage,
 };
 use runner::{run_collection, Reporter, RunOptions};
 
@@ -56,6 +56,14 @@ enum Command {
         export: Option<ExportFormat>,
         #[arg(short, long)]
         output: Option<PathBuf>,
+    },
+    /// Serve a collection as a local mock server
+    Mock {
+        /// Path to collection JSON (Postman v2.1, OpenAPI or Rustman format)
+        collection_path: PathBuf,
+        /// Port to listen on
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
     },
     /// Send a one-shot request
     Request {
@@ -124,6 +132,19 @@ async fn real_main() -> Result<i32> {
                     None => println!("{text}"),
                 }
             }
+            Ok(0)
+        }
+        Command::Mock { collection_path, port } => {
+            let collection = load::load_collection(&collection_path)?;
+            let server = MockServer::from_collection(&collection);
+            let (shutdown, bound) = server.start(port).await?;
+            println!("Mock server for '{}' listening on http://127.0.0.1:{bound}", collection.name);
+            for r in &server.routes {
+                println!("  {:<7} {} -> {}", format!("{:?}", r.method), r.path_pattern, r.response_status);
+            }
+            println!("Press Ctrl+C to stop.");
+            tokio::signal::ctrl_c().await?;
+            let _ = shutdown.send(());
             Ok(0)
         }
         Command::Request { method, url, headers, data } => {
