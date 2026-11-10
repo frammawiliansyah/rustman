@@ -5,6 +5,7 @@ pub mod engine;
 pub mod error;
 pub mod importers;
 pub mod models;
+pub mod storage;
 pub mod variables;
 
 pub use models::assertion::{AssertionResult, AssertionType};
@@ -17,3 +18,4 @@ pub use models::telemetry::TimingMetrics;
 pub use engine::HttpExecutor;
 pub use error::RustmanError;
 pub use variables::VariableResolver;
+pub use storage::{HistoryEntry, SqliteStorage};

@@ -15,6 +15,14 @@ pub enum RustmanError {
     Timeout,
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+    #[error("storage error: {0}")]
+    StorageError(String),
+}
+
+impl From<rusqlite::Error> for RustmanError {
+    fn from(e: rusqlite::Error) -> Self {
+        RustmanError::StorageError(e.to_string())
+    }
 }
 
 impl From<reqwest::Error> for RustmanError {
