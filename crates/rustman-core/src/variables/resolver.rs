@@ -35,6 +35,11 @@ impl VariableResolver {
         self.environment.insert(key.into(), value.into());
     }
 
+    /// Snapshot of the environment layer (used to seed script scopes).
+    pub fn environment_vars(&self) -> HashMap<String, String> {
+        self.environment.clone()
+    }
+
     pub fn with_global(mut self, vars: HashMap<String, String>) -> Self {
         self.global = vars;
         self

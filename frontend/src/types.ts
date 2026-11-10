@@ -45,7 +45,12 @@ export interface Timing {
   total_ms: number;
 }
 
-export interface ExecuteReply { response: HttpResponse; timing: Timing; history_id: string | null }
+export interface ExecuteReply { response: HttpResponse; timing: Timing; history_id: string | null;
+  test_results?: { name: string; passed: boolean; message?: string | null }[];
+  script_error?: string | null;
+  /** undefined = setNextRequest not called; null = terminate run; string = target request name/id. */
+  next_request?: string | null;
+}
 
 export interface Folder { id: string; name: string; description?: string | null; items: Item[] }
 export type Item = { Request: HttpRequest } | { Folder: Folder };

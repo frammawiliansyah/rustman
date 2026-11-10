@@ -211,7 +211,15 @@
     }
     if (typeof callback === "function") callback(err, res);
   };
+  var nextRequest = { called: false, value: null };
+  function setNextRequest(next) {
+    nextRequest.called = true;
+    nextRequest.value = (next === undefined || next === null) ? null : String(next);
+  }
+  var postman = { setNextRequest: setNextRequest };
+  pm.execution = { setNextRequest: setNextRequest };
   global.pm = pm;
+  global.postman = postman;
   function wordArray(str) {
     return { toString: function (enc) { return enc && enc.stringify ? enc.stringify(str) : str; } };
   }
@@ -232,6 +240,6 @@
   };
   global.console.info = global.console.warn = global.console.error = global.console.debug = global.console.log;
   global.__collect = function () {
-    return JSON.stringify({ environment: env.__data, variables: vars.__data, globals: globals.__data, results: results, logs: logs });
+    return JSON.stringify({ environment: env.__data, variables: vars.__data, globals: globals.__data, results: results, logs: logs, nextRequest: nextRequest.called ? { value: nextRequest.value } : null });
   };
 })(globalThis);

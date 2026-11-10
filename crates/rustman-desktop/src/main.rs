@@ -17,7 +17,7 @@ use axum::{Json, Router};
 use rustman_core::importers::{import_openapi, import_postman};
 use rustman_core::{
     generate_snippet, HtmlDocGenerator, MarkdownDocGenerator, GraphQLIntrospector, HeaderPair, SseClient, WebSocketSession, Collection, Cookie, CookieJar, Environment, HistoryEntry, HttpExecutor, HttpRequest, HttpResponse, RustmanError,
-    SnippetTarget, SqliteStorage, TimingMetrics, VariableResolver,
+    SnippetTarget, SqliteStorage, TimingMetrics, VariableResolver, ScriptRuntime, ScriptScope, AssertionResult,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -81,6 +81,15 @@ struct ExecuteReply {
     response: HttpResponse,
     timing: TimingMetrics,
     history_id: Option<Uuid>,
+    /// Results of `pm.test(...)` calls in the request's test script.
+    #[serde(default)]
+    test_results: Vec<AssertionResult>,
+    /// Set when the test script errored.
+    #[serde(default)]
+    script_error: Option<String>,
+    /// `postman.setNextRequest`: absent = not called, `null` = terminate run, string = target name/id.
+    #[serde(default)]
+    next_request: Option<Option<String>>,
 }
 
 #[derive(Deserialize)]
@@ -157,7 +166,20 @@ async fn execute(State(st): State<AppState>, Json(body): Json<ExecuteBody>) -> A
             None
         }
     };
-    Ok(Json(ExecuteReply { response, timing, history_id }))
+    let mut test_results = Vec::new();
+    let mut script_error = None;
+    let mut next_request = None;
+    if let Some(script) = body.request.test_script.as_deref().filter(|s| !s.trim().is_empty()) {
+        let scope = ScriptScope { environment: resolver.environment_vars(), ..Default::default() };
+        match ScriptRuntime::new().run_test(script, &scope, &response) {
+            Ok(out) => {
+                test_results = out.assertions;
+                next_request = out.next_request;
+            }
+            Err(e) => script_error = Some(e.to_string()),
+        }
+    }
+    Ok(Json(ExecuteReply { response, timing, history_id, test_results, script_error, next_request }))
 }
 
 fn persist_cookies(st: &AppState) {

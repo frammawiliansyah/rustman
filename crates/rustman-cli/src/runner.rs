@@ -7,7 +7,7 @@ use colored::Colorize;
 use rustman_core::assertions::evaluate_all;
 use rustman_core::{
     AssertionResult, AssertionType, Collection, Environment, HttpExecutor, HttpRequest, Item,
-    IterationDataset, VariableResolver,
+    IterationDataset, ScriptRuntime, ScriptScope, VariableResolver,
 };
 use serde::Serialize;
 
@@ -22,6 +22,9 @@ pub enum Reporter {
     Htmlextra,
 }
 
+/// Guard against infinite `postman.setNextRequest` loops.
+pub const DEFAULT_MAX_STEPS_PER_ITERATION: usize = 500;
+
 #[derive(Clone, Debug)]
 pub struct RunOptions {
     pub delay_ms: u64,
@@ -35,6 +38,8 @@ pub struct RunOptions {
     pub iteration_data: Option<IterationDataset>,
     /// Number of iterations (default: dataset length, or 1 without data).
     pub iteration_count: Option<usize>,
+    /// Maximum requests executed in one iteration (protects against loops).
+    pub max_steps_per_iteration: usize,
 }
 
 impl RunOptions {
@@ -85,6 +90,25 @@ pub struct RequestReport {
 }
 
 impl RequestReport {
+    fn error_only(iteration: usize, folder: Vec<String>, req: &HttpRequest, error: String) -> Self {
+        Self {
+            iteration,
+            folder,
+            name: req.name.clone(),
+            method: format!("{:?}", req.method),
+            url: req.url.clone(),
+            status: None,
+            elapsed_ms: 0,
+            size_bytes: 0,
+            error: Some(error),
+            assertions: Vec::new(),
+            request_headers: Vec::new(),
+            query_params: Vec::new(),
+            request_body: None,
+            response_body: None,
+        }
+    }
+
     /// A request fails on transport error, HTTP status >= 400, or a failed assertion.
     pub fn failed(&self) -> bool {
         self.error.is_some()
@@ -132,6 +156,15 @@ fn flatten<'a>(items: &'a [Item], depth: usize, path: &mut Vec<String>, out: &mu
     }
 }
 
+/// Finds a request step by name or ID (case-insensitive); first match wins.
+fn find_request(steps: &[Step], target: &str) -> Option<usize> {
+    let t = target.trim();
+    steps.iter().position(|s| match s {
+        Step::Request(_, _, r) => r.name.eq_ignore_ascii_case(t) || r.id.to_string().eq_ignore_ascii_case(t),
+        Step::Folder(..) => false,
+    })
+}
+
 pub async fn run_collection(
     collection: &Collection,
     env: Option<&Environment>,
@@ -168,20 +201,42 @@ pub async fn run_collection(
         if cli {
             println!("{}\n", format!("Iteration {} of {}", iter + 1, iterations).bold().underline());
         }
-        for step in &steps {
-            match step {
+        let mut pos = 0usize;
+        let mut executed = 0usize;
+        while pos < steps.len() {
+            match &steps[pos] {
                 Step::Folder(depth, name) => {
                     if cli {
                         println!("{}{} {}", "  ".repeat(*depth), "❏".cyan(), name.bold());
                     }
+                    pos += 1;
                 }
                 Step::Request(folder, depth, req) => {
+                    if executed >= opts.max_steps_per_iteration {
+                        let msg = format!(
+                            "Iteration {} aborted: exceeded {} steps (possible setNextRequest loop).",
+                            iter + 1,
+                            opts.max_steps_per_iteration
+                        );
+                        if cli {
+                            println!("{}\n", msg.red());
+                        }
+                        let mut r = RequestReport::error_only(iter + 1, folder.clone(), req, msg);
+                        r.name = "[step limit]".into();
+                        reports.push(r);
+                        if opts.bail {
+                            bailed = true;
+                            break 'iters;
+                        }
+                        break;
+                    }
+                    executed += 1;
                     if !first && opts.delay_ms > 0 {
                         tokio::time::sleep(Duration::from_millis(opts.delay_ms)).await;
                     }
                     first = false;
-                    let mut report =
-                        run_one(&executor, &resolver, req, folder.clone(), &opts.assertions).await;
+                    let (mut report, next) =
+                        run_one(&executor, &mut resolver, req, folder.clone(), &opts.assertions).await;
                     report.iteration = iter + 1;
                     if cli {
                         print_report(&report, *depth);
@@ -191,6 +246,22 @@ pub async fn run_collection(
                     if failed && opts.bail {
                         bailed = true;
                         break 'iters;
+                    }
+                    match next {
+                        None => pos += 1,
+                        Some(None) => break,
+                        Some(Some(target)) => match find_request(&steps, &target) {
+                            Some(i) => pos = i,
+                            None => {
+                                if cli {
+                                    println!(
+                                        "{}\n",
+                                        format!("Warning: setNextRequest target \"{target}\" not found; continuing.").yellow()
+                                    );
+                                }
+                                pos += 1;
+                            }
+                        },
                     }
                 }
             }
@@ -236,11 +307,11 @@ pub async fn run_collection(
 
 async fn run_one(
     executor: &HttpExecutor,
-    resolver: &VariableResolver,
+    resolver: &mut VariableResolver,
     req: &HttpRequest,
     folder: Vec<String>,
     assertions: &[AssertionType],
-) -> RequestReport {
+) -> (RequestReport, Option<Option<String>>) {
     let resolved = resolver.resolve_request(req);
     let mut report = RequestReport {
         iteration: 1,
@@ -264,6 +335,7 @@ async fn run_one(
         },
         response_body: None,
     };
+    let mut next = None;
     match executor.execute(&resolved).await {
         Ok((resp, _metrics)) => {
             report.status = Some(resp.status);
@@ -271,10 +343,30 @@ async fn run_one(
             report.size_bytes = resp.body.len();
             report.response_body = Some(resp.body.chars().take(4000).collect());
             report.assertions = evaluate_all(assertions, &resp).into_iter().map(Into::into).collect();
+            if let Some(script) = req.test_script.as_deref().filter(|s| !s.trim().is_empty()) {
+                let scope = ScriptScope {
+                    environment: resolver.environment_vars(),
+                    ..Default::default()
+                };
+                match ScriptRuntime::new().run_test(script, &scope, &resp) {
+                    Ok(out) => {
+                        report.assertions.extend(out.assertions.into_iter().map(Into::into));
+                        for (k, v) in out.scope.environment {
+                            resolver.set_environment(k, v);
+                        }
+                        next = out.next_request;
+                    }
+                    Err(e) => report.assertions.push(AssertionReport {
+                        name: "Test script".into(),
+                        passed: false,
+                        message: Some(e.to_string()),
+                    }),
+                }
+            }
         }
         Err(e) => report.error = Some(e.to_string()),
     }
-    report
+    (report, next)
 }
 
 fn print_report(r: &RequestReport, depth: usize) {
@@ -371,7 +463,7 @@ mod tests {
     }
 
     fn opts(bail: bool, assertions: Vec<AssertionType>) -> RunOptions {
-        RunOptions { delay_ms: 0, bail, reporter: Reporter::Json, html_path: None, assertions, iteration_data: None, iteration_count: None }
+        RunOptions { delay_ms: 0, bail, reporter: Reporter::Json, html_path: None, assertions, iteration_data: None, iteration_count: None, max_steps_per_iteration: DEFAULT_MAX_STEPS_PER_ITERATION }
     }
 
     #[tokio::test]
@@ -428,5 +520,78 @@ mod tests {
         o.iteration_count = Some(3);
         let s = run_collection(&coll(&["/missing"]), Some(&env(&base)), &o).await.unwrap();
         assert_eq!(s.total, 1);
+    }
+
+    fn coll_scripts(reqs: Vec<(&str, Option<&str>)>) -> Collection {
+        let items = reqs
+            .into_iter()
+            .map(|(p, script)| {
+                let mut r = HttpRequest::new(p, HttpMethod::GET, format!("{{{{base}}}}/{p}"));
+                r.test_script = script.map(String::from);
+                Item::Request(r)
+            })
+            .collect();
+        Collection { id: Uuid::new_v4(), name: "c".into(), description: None, items }
+    }
+
+    fn names(s: &RunSummary) -> Vec<&str> {
+        s.requests.iter().map(|r| r.name.as_str()).collect()
+    }
+
+    #[tokio::test]
+    async fn set_next_request_jumps_forward_case_insensitive() {
+        let base = server().await;
+        let c = coll_scripts(vec![
+            ("a", Some(r#"postman.setNextRequest("C");"#)),
+            ("b", None),
+            ("c", None),
+        ]);
+        let s = run_collection(&c, Some(&env(&base)), &opts(false, vec![])).await.unwrap();
+        assert_eq!(names(&s), vec!["a", "c"]);
+    }
+
+    #[tokio::test]
+    async fn set_next_request_null_terminates_iteration() {
+        let base = server().await;
+        let c = coll_scripts(vec![("a", None), ("b", Some("postman.setNextRequest(null);")), ("c", None)]);
+        let mut o = opts(false, vec![]);
+        o.iteration_count = Some(2);
+        let s = run_collection(&c, Some(&env(&base)), &o).await.unwrap();
+        // Termination ends the current iteration only; next iteration restarts.
+        assert_eq!(names(&s), vec!["a", "b", "a", "b"]);
+    }
+
+    #[tokio::test]
+    async fn set_next_request_by_id_and_unknown_target() {
+        let base = server().await;
+        let mut c = coll_scripts(vec![("a", None), ("b", None), ("c", None)]);
+        let id = match &c.items[2] { Item::Request(r) => r.id.to_string(), _ => unreachable!() };
+        if let Item::Request(r) = &mut c.items[0] {
+            r.test_script = Some(format!(r#"pm.execution.setNextRequest("{id}");"#));
+        }
+        let s = run_collection(&c, Some(&env(&base)), &opts(false, vec![])).await.unwrap();
+        assert_eq!(names(&s), vec!["a", "c"]);
+
+        if let Item::Request(r) = &mut c.items[0] {
+            r.test_script = Some(r#"postman.setNextRequest("nope");"#.into());
+        }
+        let s = run_collection(&c, Some(&env(&base)), &opts(false, vec![])).await.unwrap();
+        assert_eq!(names(&s), vec!["a", "b", "c"]);
+    }
+
+    #[tokio::test]
+    async fn set_next_request_loop_is_bounded_and_test_assertions_reported() {
+        let base = server().await;
+        let c = coll_scripts(vec![(
+            "a",
+            Some(r#"pm.test("ok", function(){ pm.response.to.have.status(200); }); postman.setNextRequest("a");"#),
+        )]);
+        let mut o = opts(false, vec![]);
+        o.max_steps_per_iteration = 5;
+        let s = run_collection(&c, Some(&env(&base)), &o).await.unwrap();
+        assert_eq!(s.requests.len(), 6); // 5 executions + step-limit error
+        assert_eq!(s.requests[0].assertions[0].name, "ok");
+        assert!(s.requests[5].error.as_ref().unwrap().contains("exceeded"));
+        assert_eq!(s.exit_code(), 1);
     }
 }

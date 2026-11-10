@@ -162,6 +162,7 @@ async fn real_main() -> Result<i32> {
                 assertions,
                 iteration_data: dataset,
                 iteration_count,
+                max_steps_per_iteration: runner::DEFAULT_MAX_STEPS_PER_ITERATION,
             };
             Ok(run_collection(&collection, env.as_ref(), &opts).await?.exit_code())
         }

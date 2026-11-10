@@ -45,10 +45,20 @@ pub struct ScriptOutput {
     pub assertions: Vec<AssertionResult>,
     /// Lines written through `console.log` and friends.
     pub console: Vec<String>,
+    /// `postman.setNextRequest` result: `None` if never called, `Some(None)` for
+    /// `null` (terminate the run), `Some(Some(name_or_id))` to jump to a request.
+    pub next_request: Option<Option<String>>,
+}
+
+#[derive(Deserialize)]
+struct NextRequestCall {
+    value: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct Collected {
+    #[serde(rename = "nextRequest", default)]
+    next_request: Option<NextRequestCall>,
     environment: HashMap<String, String>,
     variables: HashMap<String, String>,
     globals: HashMap<String, String>,
@@ -145,6 +155,7 @@ impl ScriptRuntime {
             },
             assertions: c.results,
             console: c.logs,
+            next_request: c.next_request.map(|n| n.value),
         })
     }
 }
@@ -364,6 +375,26 @@ mod tests {
         assert_eq!(obj["username"], "alice");
         assert_eq!(obj["id"], "1");
         assert_eq!(out.scope.iteration_data, scope.iteration_data);
+    }
+
+    #[test]
+    fn set_next_request_name_null_and_alias() {
+        let resp = response(200, "{}", 1);
+        assert_eq!(test("1+1;", &resp).next_request, None);
+        assert_eq!(
+            test(r#"postman.setNextRequest("Login");"#, &resp).next_request,
+            Some(Some("Login".to_string()))
+        );
+        assert_eq!(test("postman.setNextRequest(null);", &resp).next_request, Some(None));
+        assert_eq!(
+            test(r#"pm.execution.setNextRequest("Logout");"#, &resp).next_request,
+            Some(Some("Logout".to_string()))
+        );
+        // The last call wins.
+        assert_eq!(
+            test(r#"postman.setNextRequest("A"); postman.setNextRequest(null);"#, &resp).next_request,
+            Some(None)
+        );
     }
 
     #[test]

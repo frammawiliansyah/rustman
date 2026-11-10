@@ -6,7 +6,7 @@ import type { Environment, HttpRequest, Item } from "./types";
 
 type Row = Record<string, string>;
 interface Step { path: string; req: HttpRequest }
-interface Result { n: number; iteration: number; path: string; method: string; url: string; status?: number; ms?: number; error?: string }
+interface Result { n: number; iteration: number; path: string; method: string; url: string; status?: number; ms?: number; error?: string; testsFailed?: number; note?: string }
 
 /** RFC 4180-ish CSV parser (quoted fields, escaped quotes, CRLF). First row is the header. */
 export function parseCsv(text: string): Row[] {
@@ -51,6 +51,16 @@ function applyRow(req: HttpRequest, row: Row): HttpRequest {
   return JSON.parse(text);
 }
 
+const MAX_STEPS_PER_ITERATION = 500;
+
+/** Find a request step by name or ID (case-insensitive). */
+function findStep(steps: Step[], target: string): number {
+  const t = target.trim().toLowerCase();
+  return steps.findIndex((s) => s.req.name.toLowerCase() === t || s.req.id.toLowerCase() === t);
+}
+
+const failed = (r: Result) => !!r.error || (r.status ?? 0) >= 400 || (r.testsFailed ?? 0) > 0;
+
 function flatten(items: Item[], path: string[], out: Step[]) {
   for (const it of items) {
     if ("Request" in it) out.push({ path: [...path, it.Request.name].join(" / "), req: it.Request });
@@ -89,26 +99,46 @@ export function RunnerModal(p: { title: string; items: Item[]; environments: Env
     let n = 0, bailed = false, first = true;
     outer: for (let i = 0; i < iters; i++) {
       const row = data ? data.rows[i % data.rows.length] : {};
-      for (const s of steps) {
+      let pos = 0, executed = 0;
+      while (pos < steps.length) {
         if (stop.current) break outer;
+        const s = steps[pos];
+        if (executed >= MAX_STEPS_PER_ITERATION) {
+          setResults((rs) => [...rs, { n: ++n, iteration: i + 1, path: s.path, method: s.req.method, url: s.req.url,
+            error: `Iteration aborted: exceeded ${MAX_STEPS_PER_ITERATION} steps (possible setNextRequest loop)` }]);
+          if (bail) { bailed = true; break outer; }
+          break;
+        }
+        executed++;
         if (!first && delay > 0) await new Promise((r) => setTimeout(r, delay));
         first = false;
         const req = applyRow(s.req, row);
         const base = { n: ++n, iteration: i + 1, path: s.path, method: req.method, url: req.url };
         let res: Result;
+        let next: string | null | undefined;
         try {
           const r = await api.execute(req, envId);
-          res = { ...base, status: r.response.status, ms: r.response.elapsed_ms };
+          const testsFailed = (r.test_results ?? []).filter((t) => !t.passed).length + (r.script_error ? 1 : 0);
+          res = { ...base, status: r.response.status, ms: r.response.elapsed_ms, testsFailed };
+          next = r.next_request;
         } catch (e) { res = { ...base, error: (e as Error).message }; }
+        if (next === null) res.note = "setNextRequest(null) → run ends";
+        else if (typeof next === "string") res.note = `setNextRequest → ${next}`;
         setResults((rs) => [...rs, res]);
-        if (bail && (res.error || (res.status ?? 0) >= 400)) { bailed = true; break outer; }
+        if (bail && failed(res)) { bailed = true; break outer; }
+        if (next === undefined) pos++;
+        else if (next === null) break;
+        else {
+          const idx = findStep(steps, next);
+          if (idx >= 0) pos = idx;
+          else { res.note = `setNextRequest target "${next}" not found; continuing`; pos++; }
+        }
       }
     }
     setDone({ bailed, stopped: stop.current });
     setRunning(false);
   };
 
-  const failed = (r: Result) => !!r.error || (r.status ?? 0) >= 400;
   const nFailed = results.filter(failed).length;
 
   return (
@@ -149,7 +179,8 @@ export function RunnerModal(p: { title: string; items: Item[]; environments: Env
           <tbody>{results.map((r) => (
             <tr key={r.n}>
               <td>{r.n}</td><td>{r.iteration}</td>
-              <td>{r.path}<div className="hint sub"><MethodBadge method={r.method} /> {r.url}</div></td>
+              <td>{r.path}<div className="hint sub"><MethodBadge method={r.method} /> {r.url}</div>
+                {r.note && <div className="hint sub">{r.note}</div>}</td>
               <td><span className={`chip tiny ${failed(r) ? "bad" : "ok"}`}>{r.error ? `Error: ${r.error}` : r.status}</span></td>
               <td>{r.ms != null ? `${r.ms} ms` : ""}</td>
             </tr>
@@ -160,7 +191,7 @@ export function RunnerModal(p: { title: string; items: Item[]; environments: Env
         <div className="run-summary">
           <b>Summary:</b> <span className="ok">{results.length - nFailed} passed</span>, <span className={nFailed ? "bad" : ""}>{nFailed} failed</span> of {results.length} executed
           {done.bailed && " — stopped early (bail on error)"}{done.stopped && " — stopped by user"}
-          <div className="hint">A request passes when it gets a response with status &lt; 400.</div>
+          <div className="hint">A request passes when it gets a response with status &lt; 400 and all its test-script assertions pass. Use postman.setNextRequest(name | null) for flow control.</div>
         </div>
       )}
     </Modal>
