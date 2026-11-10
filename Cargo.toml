@@ -3,4 +3,5 @@ resolver = "2"
 members = [
     "crates/rustman-core",
     "crates/rustman-cli",
+    "crates/rustman-desktop",
 ]
