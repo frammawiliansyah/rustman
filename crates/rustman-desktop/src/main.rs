@@ -7,14 +7,14 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use rustman_core::importers::{import_openapi, import_postman};
 use rustman_core::{
-    generate_snippet, Collection, Environment, HistoryEntry, HttpExecutor, HttpRequest, HttpResponse, RustmanError,
+    generate_snippet, Collection, Cookie, CookieJar, Environment, HistoryEntry, HttpExecutor, HttpRequest, HttpResponse, RustmanError,
     SnippetTarget, SqliteStorage, TimingMetrics, VariableResolver,
 };
 use serde::{Deserialize, Serialize};
@@ -35,6 +35,7 @@ and restart, or use the <code>/api/*</code> endpoints directly.</p></body></html
 struct AppState {
     storage: Arc<SqliteStorage>,
     executor: HttpExecutor,
+    jar: Arc<CookieJar>,
 }
 
 // ---------- errors ----------
@@ -108,6 +109,7 @@ async fn execute(State(st): State<AppState>, Json(body): Json<ExecuteBody>) -> A
     }
     let resolved = resolver.resolve_request(&body.request);
     let (response, timing) = st.executor.execute(&resolved).await?;
+    persist_cookies(&st);
     // A history write failure must not hide a successful response.
     let history_id = match st.storage.save_history(&resolved, &response) {
         Ok(id) => Some(id),
@@ -117,6 +119,40 @@ async fn execute(State(st): State<AppState>, Json(body): Json<ExecuteBody>) -> A
         }
     };
     Ok(Json(ExecuteReply { response, timing, history_id }))
+}
+
+fn persist_cookies(st: &AppState) {
+    if let Err(e) = st.storage.save_cookies(&st.jar) {
+        tracing::warn!("failed to persist cookies: {e}");
+    }
+}
+
+#[derive(Deserialize)]
+struct CookieQuery {
+    domain: String,
+    name: String,
+}
+
+async fn list_cookies(State(st): State<AppState>) -> Json<Vec<Cookie>> {
+    Json(st.jar.get_cookies())
+}
+
+async fn upsert_cookie(State(st): State<AppState>, Json(c): Json<Cookie>) -> Result<Json<Cookie>, ApiError> {
+    if c.name.trim().is_empty() || c.domain.trim().is_empty() {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "cookie name and domain are required".into()));
+    }
+    st.jar.add_cookie(c.clone());
+    persist_cookies(&st);
+    Ok(Json(c))
+}
+
+async fn delete_cookie(State(st): State<AppState>, Query(q): Query<CookieQuery>) -> Result<StatusCode, ApiError> {
+    if st.jar.delete_cookie(&q.domain, &q.name) {
+        persist_cookies(&st);
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError(StatusCode::NOT_FOUND, format!("cookie {} for {} not found", q.name, q.domain)))
+    }
 }
 
 async fn list_collections(State(st): State<AppState>) -> ApiResult<Vec<Collection>> {
@@ -187,7 +223,12 @@ fn is_local_origin(origin: &HeaderValue) -> bool {
 }
 
 fn build_app(storage: Arc<SqliteStorage>, dist: PathBuf) -> Router {
-    let state = AppState { storage, executor: HttpExecutor::new() };
+    let jar = Arc::new(storage.load_cookie_jar().unwrap_or_else(|e| {
+        tracing::warn!("failed to load cookies: {e}");
+        CookieJar::new()
+    }));
+    let executor = HttpExecutor::new().with_cookie_jar(jar.clone());
+    let state = AppState { storage, executor, jar };
 
     let api = Router::new()
         .route("/execute", post(execute))
@@ -196,6 +237,7 @@ fn build_app(storage: Arc<SqliteStorage>, dist: PathBuf) -> Router {
         .route("/collections/:id", delete(delete_collection))
         .route("/environments", get(list_environments).post(save_environment))
         .route("/environments/:id", delete(delete_environment))
+        .route("/cookies", get(list_cookies).post(upsert_cookie).delete(delete_cookie))
         .route("/history", get(list_history))
         .route("/import/postman", post(import_postman_handler))
         .route("/import/openapi", post(import_openapi_handler))
@@ -340,6 +382,26 @@ mod tests {
             .await
             .unwrap();
         assert!(bad.status().is_client_error());
+    }
+
+    #[tokio::test]
+    async fn cookie_crud() {
+        let base = spawn(PathBuf::from("/nonexistent")).await;
+        let c = reqwest::Client::new();
+        let r = c
+            .post(format!("{base}/api/cookies"))
+            .json(&json!({ "name": "sid", "value": "1", "domain": "example.com" }))
+            .send()
+            .await
+            .unwrap();
+        assert!(r.status().is_success());
+        let list: Vec<serde_json::Value> =
+            c.get(format!("{base}/api/cookies")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0]["path"], "/");
+        let url = format!("{base}/api/cookies?domain=example.com&name=sid");
+        assert_eq!(c.delete(&url).send().await.unwrap().status(), 204);
+        assert_eq!(c.delete(&url).send().await.unwrap().status(), 404);
     }
 
     #[tokio::test]

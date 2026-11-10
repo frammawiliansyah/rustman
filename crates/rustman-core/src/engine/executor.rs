@@ -1,9 +1,11 @@
+use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::Utc;
-use reqwest::header::{HeaderName, HeaderValue, CONTENT_TYPE};
+use reqwest::header::{HeaderName, HeaderValue, CONTENT_TYPE, COOKIE, SET_COOKIE};
 use reqwest::{multipart, Client, Method, Request, RequestBuilder};
 
+use crate::cookies::CookieJar;
 use crate::error::RustmanError;
 use crate::models::http::{
     AuthConfig, HeaderPair, HttpMethod, HttpRequest, HttpResponse, RequestBody,
@@ -14,6 +16,7 @@ use crate::models::telemetry::TimingMetrics;
 #[derive(Clone, Debug)]
 pub struct HttpExecutor {
     client: Client,
+    cookie_jar: Option<Arc<CookieJar>>,
 }
 
 impl Default for HttpExecutor {
@@ -49,7 +52,20 @@ impl HttpExecutor {
                 .cookie_store(true)
                 .build()
                 .expect("failed to build reqwest client"),
+            cookie_jar: None,
         }
+    }
+
+    /// Use a shared [`CookieJar`]: `Cookie` headers are injected from it and `Set-Cookie`
+    /// response headers are stored into it. Replaces reqwest's internal cookie store.
+    /// Note: `Set-Cookie` headers of intermediate redirect responses are not captured.
+    pub fn with_cookie_jar(mut self, jar: Arc<CookieJar>) -> Self {
+        self.client = Client::builder()
+            .cookie_store(false)
+            .build()
+            .expect("failed to build reqwest client");
+        self.cookie_jar = Some(jar);
+        self
     }
 
     /// Build (without sending) the reqwest request for a model request.
@@ -86,11 +102,26 @@ impl HttpExecutor {
             url.query_pairs_mut().extend_pairs(query);
         }
 
+        let cookie_header = match &self.cookie_jar {
+            Some(jar) => jar.get_cookie_header(url.as_str()),
+            None => None,
+        };
         let mut rb = self.client.request(to_method(req.method), url);
 
         for h in req.headers.iter().filter(|h| h.enabled) {
             let (n, v) = header_parts(&h.key, &h.value)?;
             rb = rb.header(n, v);
+        }
+
+        // An explicit user-supplied Cookie header wins over the jar.
+        let has_cookie_header = req
+            .headers
+            .iter()
+            .any(|h| h.enabled && h.key.trim().eq_ignore_ascii_case("cookie"));
+        if let (Some(c), false) = (cookie_header, has_cookie_header) {
+            let v = HeaderValue::from_str(&c)
+                .map_err(|e| RustmanError::InvalidHeader(format!("Cookie: {e}")))?;
+            rb = rb.header(COOKIE, v);
         }
 
         rb = match &req.auth {
@@ -149,6 +180,17 @@ impl HttpExecutor {
         let ttfb_ms = start.elapsed().as_millis() as u64;
 
         let status = resp.status().as_u16();
+        if let Some(jar) = &self.cookie_jar {
+            let set_cookies: Vec<String> = resp
+                .headers()
+                .get_all(SET_COOKIE)
+                .iter()
+                .map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned())
+                .collect();
+            if !set_cookies.is_empty() {
+                jar.parse_and_store(resp.url().as_str(), &set_cookies);
+            }
+        }
         let headers: Vec<HeaderPair> = resp
             .headers()
             .iter()

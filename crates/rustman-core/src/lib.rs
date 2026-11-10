@@ -2,6 +2,7 @@
 
 pub mod assertions;
 pub mod codegen;
+pub mod cookies;
 pub mod engine;
 pub mod error;
 pub mod importers;
@@ -12,12 +13,14 @@ pub mod variables;
 
 pub use models::assertion::{AssertionResult, AssertionType};
 pub use models::collection::{Collection, Folder, Item};
+pub use models::cookie::Cookie;
 pub use models::environment::{Environment, Variable};
 pub use models::http::{
     AuthConfig, HeaderPair, HttpMethod, HttpRequest, HttpResponse, QueryParam, RequestBody,
 };
 pub use models::telemetry::TimingMetrics;
 pub use codegen::{generate_snippet, SnippetTarget};
+pub use cookies::CookieJar;
 pub use engine::HttpExecutor;
 pub use error::RustmanError;
 pub use importers::{

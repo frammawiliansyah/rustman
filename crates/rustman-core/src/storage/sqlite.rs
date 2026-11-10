@@ -8,6 +8,8 @@ use uuid::Uuid;
 
 use crate::error::RustmanError;
 use crate::models::collection::Collection;
+use crate::models::cookie::Cookie;
+use crate::cookies::CookieJar;
 use crate::models::environment::Environment;
 use crate::models::http::{HttpRequest, HttpResponse};
 
@@ -55,6 +57,16 @@ CREATE TABLE IF NOT EXISTS history (
     request_data TEXT NOT NULL,
     response_data TEXT NOT NULL,
     created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cookies (
+    domain TEXT NOT NULL,
+    path TEXT NOT NULL,
+    name TEXT NOT NULL,
+    value TEXT NOT NULL,
+    expires TEXT,
+    http_only INTEGER NOT NULL,
+    secure INTEGER NOT NULL,
+    PRIMARY KEY (domain, path, name)
 );
 CREATE INDEX IF NOT EXISTS idx_history_created_at ON history(created_at DESC);
 ";
@@ -178,6 +190,68 @@ impl SqliteStorage {
     }
 
     // ---- history ----
+
+    /// Replace all persisted cookies with the (non-expired) contents of `jar`.
+    pub fn save_cookies(&self, jar: &CookieJar) -> Result<(), RustmanError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM cookies", [])?;
+        for c in jar.get_cookies() {
+            tx.execute(
+                "INSERT OR REPLACE INTO cookies (domain, path, name, value, expires, http_only, secure)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    c.domain,
+                    c.path,
+                    c.name,
+                    c.value,
+                    c.expires.map(|e| e.to_rfc3339()),
+                    c.http_only,
+                    c.secure
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Load persisted cookies, skipping expired ones.
+    pub fn load_cookies(&self) -> Result<Vec<Cookie>, RustmanError> {
+        let conn = self.conn()?;
+        let mut stmt = conn
+            .prepare("SELECT domain, path, name, value, expires, http_only, secure FROM cookies")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, bool>(5)?,
+                r.get::<_, bool>(6)?,
+            ))
+        })?;
+        let now = Utc::now();
+        let mut out = Vec::new();
+        for row in rows {
+            let (domain, path, name, value, expires, http_only, secure) = row?;
+            let expires = expires.as_deref().map(parse_time).transpose()?;
+            if expires.is_some_and(|e| e <= now) {
+                continue;
+            }
+            out.push(Cookie { name, value, domain, path, expires, http_only, secure });
+        }
+        Ok(out)
+    }
+
+    /// Build a [`CookieJar`] pre-populated from persisted cookies.
+    pub fn load_cookie_jar(&self) -> Result<CookieJar, RustmanError> {
+        let jar = CookieJar::new();
+        for c in self.load_cookies()? {
+            jar.add_cookie(c);
+        }
+        Ok(jar)
+    }
 
     pub fn save_history(
         &self,
@@ -409,5 +483,17 @@ mod tests {
         assert_eq!(s.get_collection(&c.id).unwrap(), Some(c));
         drop(s);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cookies_roundtrip() {
+        let st = SqliteStorage::new_in_memory().unwrap();
+        let jar = CookieJar::new();
+        jar.parse_and_store("https://h.com/a", &["s=1; Secure; HttpOnly; Max-Age=3600".to_string()]);
+        st.save_cookies(&jar).unwrap();
+        let loaded = st.load_cookie_jar().unwrap();
+        assert_eq!(loaded.get_cookies().len(), 1);
+        let c = &loaded.get_cookies()[0];
+        assert!(c.secure && c.http_only && c.expires.is_some());
     }
 }
