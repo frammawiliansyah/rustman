@@ -17,7 +17,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use rustman_core::importers::{import_openapi, import_postman};
 use rustman_core::{
-    generate_snippet, HeaderPair, SseClient, WebSocketSession, Collection, Cookie, CookieJar, Environment, HistoryEntry, HttpExecutor, HttpRequest, HttpResponse, RustmanError,
+    generate_snippet, GraphQLIntrospector, HeaderPair, SseClient, WebSocketSession, Collection, Cookie, CookieJar, Environment, HistoryEntry, HttpExecutor, HttpRequest, HttpResponse, RustmanError,
     SnippetTarget, SqliteStorage, TimingMetrics, VariableResolver,
 };
 use serde::{Deserialize, Serialize};
@@ -95,7 +95,18 @@ struct CodegenReply {
     code: String,
 }
 
+#[derive(Deserialize)]
+struct GraphqlIntrospectBody {
+    url: String,
+    #[serde(default)]
+    headers: Vec<HeaderPair>,
+}
+
 // ---------- handlers ----------
+
+async fn graphql_introspect(Json(body): Json<GraphqlIntrospectBody>) -> ApiResult<serde_json::Value> {
+    Ok(Json(GraphQLIntrospector::introspect(&body.url, &body.headers).await?))
+}
 
 async fn codegen(Json(body): Json<CodegenBody>) -> Json<CodegenReply> {
     Json(CodegenReply { code: generate_snippet(body.target, &body.request) })
@@ -327,6 +338,7 @@ fn build_app(storage: Arc<SqliteStorage>, dist: PathBuf) -> Router {
     let api = Router::new()
         .route("/execute", post(execute))
         .route("/codegen", post(codegen))
+        .route("/graphql/introspect", post(graphql_introspect))
         .route("/collections", get(list_collections).post(save_collection))
         .route("/collections/:id", delete(delete_collection))
         .route("/environments", get(list_environments).post(save_environment))
