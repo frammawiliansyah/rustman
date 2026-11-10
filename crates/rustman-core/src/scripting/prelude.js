@@ -164,7 +164,60 @@
       }
     }
   };
+  pm.sendRequest = function (req, callback) {
+    var spec = typeof req === "string" ? { url: req } : (req || {});
+    var headers = [];
+    var h = spec.header || spec.headers;
+    if (Array.isArray(h)) {
+      h.forEach(function (p) { if (p && p.key !== undefined) headers.push([String(p.key), String(p.value)]); });
+    } else if (h && typeof h === "object") {
+      Object.keys(h).forEach(function (k) { headers.push([k, String(h[k])]); });
+    }
+    var body = spec.body;
+    if (body && typeof body === "object") {
+      body = body.mode === "raw" ? body.raw : JSON.stringify(body);
+    }
+    var raw = JSON.parse(__http(JSON.stringify({
+      url: String(spec.url),
+      method: String(spec.method || "GET"),
+      headers: headers,
+      body: (body === undefined || body === null) ? null : String(body)
+    })));
+    var err = null, res = null;
+    if (raw.error) {
+      err = new Error(raw.error);
+    } else {
+      var hmap = {};
+      raw.headers.forEach(function (p) {
+        var k = p[0].toLowerCase();
+        hmap[k] = Object.prototype.hasOwnProperty.call(hmap, k) ? hmap[k] + ", " + p[1] : p[1];
+      });
+      res = {
+        code: raw.code,
+        status: raw.status,
+        headers: hmap,
+        text: function () { return raw.body; },
+        json: function () { return JSON.parse(raw.body); }
+      };
+    }
+    if (typeof callback === "function") callback(err, res);
+  };
   global.pm = pm;
+  function wordArray(str) {
+    return { toString: function (enc) { return enc && enc.stringify ? enc.stringify(str) : str; } };
+  }
+  global.CryptoJS = {
+    MD5: function (s) { var h = __md5(String(s)); return { toString: function () { return h; } }; },
+    SHA256: function (s) { var h = __sha256(String(s)); return { toString: function () { return h; } }; },
+    HmacSHA256: function (m, k) { var h = __hmac_sha256(String(m), String(k)); return { toString: function () { return h; } }; },
+    enc: {
+      Base64: {
+        stringify: function (v) { return __b64_encode(String(v)); },
+        parse: function (b64) { return wordArray(__b64_decode(String(b64))); }
+      },
+      Utf8: { stringify: function (v) { return String(v); }, parse: function (s) { return wordArray(String(s)); } }
+    }
+  };
   global.console = {
     log: function () { logs.push(Array.prototype.slice.call(arguments).map(function (x) { return typeof x === "string" ? x : show(x); }).join(" ")); }
   };
