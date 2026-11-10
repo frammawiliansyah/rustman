@@ -11,10 +11,15 @@ use rustman_core::{
 };
 use serde::Serialize;
 
+use crate::reporter::HtmlReporter;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum Reporter {
     Cli,
     Json,
+    /// Visual HTML dashboard (htmlextra parity).
+    #[value(name = "htmlextra", alias = "html")]
+    Htmlextra,
 }
 
 #[derive(Clone, Debug)]
@@ -22,6 +27,8 @@ pub struct RunOptions {
     pub delay_ms: u64,
     pub bail: bool,
     pub reporter: Reporter,
+    /// Output path for the HTML dashboard (htmlextra reporter).
+    pub html_path: Option<std::path::PathBuf>,
     /// Assertions applied to every request's response.
     pub assertions: Vec<AssertionType>,
     /// Data file rows; row `i % len` feeds iteration `i`.
@@ -66,6 +73,15 @@ pub struct RequestReport {
     pub size_bytes: usize,
     pub error: Option<String>,
     pub assertions: Vec<AssertionReport>,
+    #[serde(default)]
+    pub request_headers: Vec<(String, String)>,
+    #[serde(default)]
+    pub query_params: Vec<(String, String)>,
+    #[serde(default)]
+    pub request_body: Option<String>,
+    /// Response body, truncated for reporting.
+    #[serde(default)]
+    pub response_body: Option<String>,
 }
 
 impl RequestReport {
@@ -121,7 +137,7 @@ pub async fn run_collection(
     env: Option<&Environment>,
     opts: &RunOptions,
 ) -> Result<RunSummary> {
-    let cli = opts.reporter == Reporter::Cli;
+    let cli = opts.reporter != Reporter::Json;
     let executor = HttpExecutor::new();
 
     let mut steps = Vec::new();
@@ -203,6 +219,16 @@ pub async fn run_collection(
 
     match opts.reporter {
         Reporter::Cli => print_summary(&summary),
+        Reporter::Htmlextra => {
+            print_summary(&summary);
+            let path = opts
+                .html_path
+                .clone()
+                .unwrap_or_else(|| std::path::PathBuf::from("rustman-report.html"));
+            let html = HtmlReporter::generate(&summary, &collection.name);
+            std::fs::write(&path, html)?;
+            println!("\nHTML report written to {}", path.display());
+        }
         Reporter::Json => println!("{}", serde_json::to_string_pretty(&summary)?),
     }
     Ok(summary)
@@ -227,12 +253,23 @@ async fn run_one(
         size_bytes: 0,
         error: None,
         assertions: Vec::new(),
+        request_headers: resolved.headers.iter().filter(|h| h.enabled).map(|h| (h.key.clone(), h.value.clone())).collect(),
+        query_params: resolved.query_params.iter().filter(|q| q.enabled).map(|q| (q.key.clone(), q.value.clone())).collect(),
+        request_body: match &resolved.body {
+            rustman_core::RequestBody::None => None,
+            rustman_core::RequestBody::Raw { body, .. } => Some(body.clone()),
+            rustman_core::RequestBody::FormUrlEncoded(p) | rustman_core::RequestBody::FormData(p) => {
+                Some(p.iter().filter(|h| h.enabled).map(|h| format!("{}={}", h.key, h.value)).collect::<Vec<_>>().join("&"))
+            }
+        },
+        response_body: None,
     };
     match executor.execute(&resolved).await {
         Ok((resp, _metrics)) => {
             report.status = Some(resp.status);
             report.elapsed_ms = resp.elapsed_ms;
             report.size_bytes = resp.body.len();
+            report.response_body = Some(resp.body.chars().take(4000).collect());
             report.assertions = evaluate_all(assertions, &resp).into_iter().map(Into::into).collect();
         }
         Err(e) => report.error = Some(e.to_string()),
@@ -334,7 +371,7 @@ mod tests {
     }
 
     fn opts(bail: bool, assertions: Vec<AssertionType>) -> RunOptions {
-        RunOptions { delay_ms: 0, bail, reporter: Reporter::Json, assertions, iteration_data: None, iteration_count: None }
+        RunOptions { delay_ms: 0, bail, reporter: Reporter::Json, html_path: None, assertions, iteration_data: None, iteration_count: None }
     }
 
     #[tokio::test]

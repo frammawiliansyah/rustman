@@ -1,4 +1,5 @@
 mod load;
+mod reporter;
 mod runner;
 
 use std::path::PathBuf;
@@ -38,6 +39,9 @@ enum Command {
         /// Output reporter
         #[arg(long, value_enum, default_value_t = Reporter::Cli)]
         reporter: Reporter,
+        /// HTML report output path (htmlextra/html reporter)
+        #[arg(long = "reporter-html-path", default_value = "rustman-report.html")]
+        reporter_html_path: PathBuf,
         /// Assert every response has this status code
         #[arg(long)]
         expect_status: Option<u16>,
@@ -134,7 +138,7 @@ fn load_iteration_data(path: &std::path::Path) -> Result<IterationDataset> {
 
 async fn real_main() -> Result<i32> {
     match Cli::parse().command {
-        Command::Run { collection_path, environment, delay, bail, reporter, expect_status, max_time, iteration_data, iteration_count } => {
+        Command::Run { collection_path, environment, delay, bail, reporter, reporter_html_path, expect_status, max_time, iteration_data, iteration_count } => {
             let collection = load::load_collection(&collection_path)?;
             let env = environment.as_deref().map(load::load_environment).transpose()?;
             let mut assertions = Vec::new();
@@ -154,6 +158,7 @@ async fn real_main() -> Result<i32> {
                 delay_ms: delay,
                 bail,
                 reporter,
+                html_path: Some(reporter_html_path),
                 assertions,
                 iteration_data: dataset,
                 iteration_count,
