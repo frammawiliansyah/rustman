@@ -469,9 +469,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         h if h.contains(':') && !h.starts_with('[') => format!("[{h}]"),
         h => h.to_string(),
     };
-    let _webview = wry::WebViewBuilder::new()
-        .with_url(&format!("http://{url_host}:{port}/"))
-        .build(&window)?;
+    let builder = wry::WebViewBuilder::new().with_url(&format!("http://{url_host}:{port}/"));
+    // On Linux, wry only accepts an Xlib handle via `build(&window)`, so it fails with
+    // `UnsupportedWindowHandle` on Wayland (and tao's GTK window). Build into tao's GTK
+    // container instead, which works on both X11 and Wayland.
+    #[cfg(target_os = "linux")]
+    let _webview = {
+        use tao::platform::unix::WindowExtUnix;
+        use wry::WebViewBuilderExtUnix;
+        let vbox = window.default_vbox().ok_or("tao window has no default GTK vbox")?;
+        builder.build_gtk(vbox)?
+    };
+    #[cfg(not(target_os = "linux"))]
+    let _webview = builder.build(&window)?;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = tao::event_loop::ControlFlow::Wait;
