@@ -7,6 +7,7 @@ pub mod engine;
 pub mod error;
 pub mod importers;
 pub mod models;
+pub mod realtime;
 pub mod storage;
 pub mod scripting;
 pub mod variables;
@@ -30,3 +31,4 @@ pub use importers::{
 pub use variables::VariableResolver;
 pub use storage::{HistoryEntry, SqliteStorage};
 pub use scripting::{ScriptOutput, ScriptRuntime, ScriptScope};
+pub use realtime::{SseClient, SseEvent, WebSocketSession, WsDirection, WsMessage, WsPayloadType};

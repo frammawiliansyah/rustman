@@ -15,3 +15,7 @@ reqwest = { version = "0.12", features = ["json", "multipart", "stream", "cookie
 tokio = { version = "1.40", features = ["full"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 boa_engine = "0.19"
+tokio-tungstenite = { version = "0.24", features = ["connect", "handshake"] }
+eventsource-stream = "0.2"
+futures-util = "0.3"
+base64 = "0.22"

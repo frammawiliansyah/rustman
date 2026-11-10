@@ -7,14 +7,17 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::extract::ws::{Message as AxMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
+use axum::http::HeaderMap;
 use axum::http::{header, HeaderValue, StatusCode};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use rustman_core::importers::{import_openapi, import_postman};
 use rustman_core::{
-    generate_snippet, Collection, Cookie, CookieJar, Environment, HistoryEntry, HttpExecutor, HttpRequest, HttpResponse, RustmanError,
+    generate_snippet, HeaderPair, SseClient, WebSocketSession, Collection, Cookie, CookieJar, Environment, HistoryEntry, HttpExecutor, HttpRequest, HttpResponse, RustmanError,
     SnippetTarget, SqliteStorage, TimingMetrics, VariableResolver,
 };
 use serde::{Deserialize, Serialize};
@@ -222,6 +225,97 @@ fn is_local_origin(origin: &HeaderValue) -> bool {
     }
 }
 
+// ---------- realtime bridges ----------
+
+#[derive(Deserialize)]
+struct BridgeQuery {
+    target: String,
+    /// Optional JSON-encoded array of `{key, value, enabled}` headers for the upstream request.
+    #[serde(default)]
+    headers: Option<String>,
+}
+
+impl BridgeQuery {
+    fn header_pairs(&self) -> Result<Vec<HeaderPair>, ApiError> {
+        match &self.headers {
+            None => Ok(Vec::new()),
+            Some(h) => serde_json::from_str(h)
+                .map_err(|e| ApiError(StatusCode::BAD_REQUEST, format!("invalid headers JSON: {e}"))),
+        }
+    }
+}
+
+/// Browsers don't apply CORS to WebSocket upgrades, so reject non-local origins explicitly.
+fn check_ws_origin(headers: &HeaderMap) -> Result<(), ApiError> {
+    match headers.get(header::ORIGIN) {
+        Some(o) if !is_local_origin(o) => Err(ApiError(StatusCode::FORBIDDEN, "origin not allowed".into())),
+        _ => Ok(()),
+    }
+}
+
+async fn ws_connect(
+    ws: WebSocketUpgrade,
+    headers: HeaderMap,
+    Query(q): Query<BridgeQuery>,
+) -> Result<Response, ApiError> {
+    check_ws_origin(&headers)?;
+    let pairs = q.header_pairs()?;
+    // Connect upstream first so failures surface as an HTTP error instead of a silent close.
+    let (session, rx) = WebSocketSession::connect(&q.target, &pairs).await?;
+    Ok(ws.on_upgrade(move |socket| ws_relay(socket, session, rx)))
+}
+
+/// Browser -> upstream: text/binary frames. Upstream -> browser: JSON-encoded `WsMessage`s
+/// (both directions, so the UI can render a full message log).
+async fn ws_relay(
+    socket: WebSocket,
+    session: WebSocketSession,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<rustman_core::WsMessage>,
+) {
+    use futures_util::{SinkExt, StreamExt};
+    let (mut to_browser, mut from_browser) = socket.split();
+    loop {
+        tokio::select! {
+            up = rx.recv() => match up {
+                Some(m) => {
+                    let Ok(text) = serde_json::to_string(&m) else { continue };
+                    if to_browser.send(AxMessage::Text(text)).await.is_err() { break; }
+                }
+                None => break,
+            },
+            down = from_browser.next() => match down {
+                Some(Ok(AxMessage::Text(t))) => { if session.send_text(&t).await.is_err() { break; } }
+                Some(Ok(AxMessage::Binary(b))) => { if session.send_binary(&b).await.is_err() { break; } }
+                Some(Ok(AxMessage::Close(_))) | Some(Err(_)) | None => break,
+                Some(Ok(_)) => {}
+            },
+        }
+    }
+    let _ = session.close().await;
+    let _ = to_browser.close().await;
+}
+
+async fn sse_connect(
+    headers: HeaderMap,
+    Query(q): Query<BridgeQuery>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>>, ApiError> {
+    check_ws_origin(&headers)?;
+    let pairs = q.header_pairs()?;
+    let rx = SseClient::connect(&q.target, &pairs).await?;
+    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+        let ev = rx.recv().await?;
+        let mut out = Event::default().data(ev.data);
+        if let Some(id) = ev.id {
+            out = out.id(id);
+        }
+        if let Some(name) = ev.event {
+            out = out.event(name);
+        }
+        Some((Ok(out), rx))
+    });
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
 fn build_app(storage: Arc<SqliteStorage>, dist: PathBuf) -> Router {
     let jar = Arc::new(storage.load_cookie_jar().unwrap_or_else(|e| {
         tracing::warn!("failed to load cookies: {e}");
@@ -241,6 +335,8 @@ fn build_app(storage: Arc<SqliteStorage>, dist: PathBuf) -> Router {
         .route("/history", get(list_history))
         .route("/import/postman", post(import_postman_handler))
         .route("/import/openapi", post(import_openapi_handler))
+        .route("/ws/connect", get(ws_connect))
+        .route("/sse/connect", get(sse_connect))
         .with_state(state);
 
     // Only local origins may call the API from a browser: it can fire arbitrary requests.
@@ -417,5 +513,67 @@ mod tests {
         assert!(is_local_origin(&HeaderValue::from_static("http://127.0.0.1:51730")));
         assert!(!is_local_origin(&HeaderValue::from_static("https://evil.com")));
         assert!(!is_local_origin(&HeaderValue::from_static("http://localhost.evil.com")));
+    }
+
+    #[tokio::test]
+    async fn sse_proxy_streams_upstream_events() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let up = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let up_addr = up.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut s, _) = up.accept().await.unwrap();
+            let mut buf = [0u8; 2048];
+            let _ = s.read(&mut buf).await;
+            s.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\nevent: tick\ndata: hi\n\n")
+                .await
+                .unwrap();
+        });
+        let base = spawn(PathBuf::from("/nonexistent")).await;
+        let body = reqwest::get(format!("{base}/api/sse/connect?target=http://{up_addr}"))
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(body.contains("event: tick") && body.contains("data: hi"), "{body}");
+
+        let bad = reqwest::get(format!("{base}/api/sse/connect?target=nope")).await.unwrap();
+        assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn ws_bridge_relays_and_rejects_foreign_origin() {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+        let up = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let up_addr = up.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (s, _) = up.accept().await.unwrap();
+            let ws = tokio_tungstenite::accept_async(s).await.unwrap();
+            let (mut tx, mut rx) = ws.split();
+            while let Some(Ok(m)) = rx.next().await {
+                if m.is_text() {
+                    tx.send(m).await.unwrap();
+                }
+            }
+        });
+        let base = spawn(PathBuf::from("/nonexistent")).await;
+        let ws_base = base.replace("http://", "ws://");
+
+        let (mut c, _) =
+            tokio_tungstenite::connect_async(format!("{ws_base}/api/ws/connect?target=ws://{up_addr}")).await.unwrap();
+        c.send(Message::Text("ping".into())).await.unwrap();
+        let mut seen_in = false;
+        for _ in 0..2 {
+            let Some(Ok(Message::Text(t))) = c.next().await else { panic!("no frame") };
+            let v: serde_json::Value = serde_json::from_str(&t).unwrap();
+            assert_eq!(v["content"], "ping");
+            seen_in |= v["direction"] == "In";
+        }
+        assert!(seen_in);
+
+        let mut req = format!("{ws_base}/api/ws/connect?target=ws://{up_addr}").into_client_request().unwrap();
+        req.headers_mut().insert("origin", "http://evil.example".parse().unwrap());
+        assert!(tokio_tungstenite::connect_async(req).await.is_err());
     }
 }
