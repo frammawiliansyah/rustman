@@ -75,3 +75,10 @@ export interface Cookie {
 export interface WsMessage {
   direction: "In" | "Out"; payload_type: "Text" | "Binary"; content: string; timestamp: string;
 }
+
+export interface GqlField { name: string; type?: { name: string | null; kind: string } | null }
+export interface GqlType { name: string; kind: string; description?: string | null; fields?: GqlField[] | null }
+export interface GqlSchema {
+  queryType?: { name: string } | null; mutationType?: { name: string } | null;
+  types: GqlType[]; queries: GqlField[]; mutations: GqlField[];
+}

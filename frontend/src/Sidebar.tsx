@@ -1,12 +1,14 @@
 import { useRef, useState } from "react";
 import { api } from "./api";
+import { DocsModal } from "./DocsModal";
+import { RunnerModal } from "./RunnerModal";
 import type { Collection, Environment, HistoryEntry, HttpRequest, Item } from "./types";
 
 function Badge({ method }: { method: string }) {
   return <span className={`mbadge m-${method}`}>{method.slice(0, 4)}</span>;
 }
 
-function Tree({ items, onOpen }: { items: Item[]; onOpen: (r: HttpRequest) => void }) {
+function Tree({ items, onOpen, onRun }: { items: Item[]; onOpen: (r: HttpRequest) => void; onRun: (title: string, items: Item[]) => void }) {
   return (
     <ul className="tree">
       {items.map((it, i) =>
@@ -17,8 +19,11 @@ function Tree({ items, onOpen }: { items: Item[]; onOpen: (r: HttpRequest) => vo
         ) : (
           <li key={i}>
             <details open>
-              <summary>📁 {it.Folder.name}</summary>
-              <Tree items={it.Folder.items} onOpen={onOpen} />
+              <summary>
+                <span>📁 {it.Folder.name}</span>
+                <button className="icon" title="Run folder" onClick={(e) => { e.preventDefault(); onRun(it.Folder.name, it.Folder.items); }}>▶ Run</button>
+              </summary>
+              <Tree items={it.Folder.items} onOpen={onOpen} onRun={onRun} />
             </details>
           </li>
         ),
@@ -34,6 +39,8 @@ export function Sidebar(p: {
   onEditEnv: () => void;
 }) {
   const [tab, setTab] = useState<"collections" | "history">("collections");
+  const [docs, setDocs] = useState<Collection | null>(null);
+  const [run, setRun] = useState<{ title: string; items: Item[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const kind = useRef<"postman" | "openapi">("postman");
 
@@ -79,9 +86,13 @@ export function Sidebar(p: {
             <details key={c.id} open>
               <summary>
                 <span>{c.name}</span>
-                <button className="icon" title="Delete" onClick={(e) => { e.preventDefault(); del(c); }}>🗑</button>
+                <span className="side-actions">
+                  <button className="icon" title="Run Collection" onClick={(e) => { e.preventDefault(); setRun({ title: c.name, items: c.items }); }}>▶ Run</button>
+                  <button className="icon" title="View Docs" onClick={(e) => { e.preventDefault(); setDocs(c); }}>📖 View Docs</button>
+                  <button className="icon" title="Delete" onClick={(e) => { e.preventDefault(); del(c); }}>🗑</button>
+                </span>
               </summary>
-              <Tree items={c.items} onOpen={p.onOpen} />
+              <Tree items={c.items} onOpen={p.onOpen} onRun={(title, items) => setRun({ title, items })} />
             </details>
           )))}
         {tab === "history" && (p.history.length === 0
@@ -93,6 +104,8 @@ export function Sidebar(p: {
             </li>
           ))}</ul>)}
       </div>
+      {docs && <DocsModal collection={docs} onClose={() => setDocs(null)} />}
+      {run && <RunnerModal title={run.title} items={run.items} environments={p.environments} envId={p.envId} onClose={() => setRun(null)} />}
     </aside>
   );
 }

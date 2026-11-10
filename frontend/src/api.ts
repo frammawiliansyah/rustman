@@ -1,4 +1,4 @@
-import type { Collection, Cookie, SnippetTarget, Environment, ExecuteReply, HistoryEntry, HttpRequest } from "./types";
+import type { KV, Collection, Cookie, SnippetTarget, Environment, ExecuteReply, HistoryEntry, HttpRequest, GqlSchema } from "./types";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, init);
@@ -34,5 +34,9 @@ export const api = {
   saveCookie: (c: Cookie) => call<Cookie>("/cookies", json("POST", c)),
   deleteCookie: (domain: string, name: string) =>
     call<void>(`/cookies?domain=${encodeURIComponent(domain)}&name=${encodeURIComponent(name)}`, { method: "DELETE" }),
+  graphqlIntrospect: (url: string, headers: KV[]) =>
+    call<GqlSchema>("/graphql/introspect", json("POST", { url, headers })),
+  renderDocs: (collection: Collection, format: "html" | "markdown") =>
+    call<{ content: string }>("/docs/render", json("POST", { collection, format })),
   importOpenapi: (raw: string) => call<Collection>("/import/openapi", { method: "POST", body: raw }),
 };

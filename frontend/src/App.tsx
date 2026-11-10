@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { CodeModal } from "./CodeModal";
 import { CookieManager } from "./CookieManager";
+import { GraphqlPane } from "./GraphqlPane";
 import { RealtimePane } from "./RealtimePane";
 import { EnvEditor } from "./EnvEditor";
 import { RequestPane } from "./RequestPane";
@@ -26,7 +27,7 @@ export default function App() {
   const [showEnv, setShowEnv] = useState(false);
   const [showCode, setShowCode] = useState(false);
   const [showCookies, setShowCookies] = useState(false);
-  const [mode, setMode] = useState<"http" | "ws" | "sse">("http");
+  const [mode, setMode] = useState<"http" | "ws" | "sse" | "graphql">("http");
 
   const refresh = useCallback(async () => {
     try {
@@ -65,7 +66,7 @@ export default function App() {
       <main className="main">
         <div className="topbar">
           <div className="mode-switch">
-            {([["http", "HTTP Request"], ["ws", "WebSocket"], ["sse", "Server-Sent Events"]] as const).map(([k, l]) => (
+            {([["http", "HTTP Request"], ["ws", "WebSocket"], ["sse", "Server-Sent Events"], ["graphql", "GraphQL"]] as const).map(([k, l]) => (
               <button key={k} className={mode === k ? "active" : ""} onClick={() => setMode(k)}>{l}</button>
             ))}
           </div>
@@ -78,7 +79,7 @@ export default function App() {
           <RequestPane req={req} onChange={setReq} onSend={send} sending={sending}
             onCode={() => setShowCode(true)} onCookies={() => setShowCookies(true)} />
           <ResponsePane reply={reply} error={error} loading={sending} />
-        </>) : <RealtimePane key={mode} kind={mode} />}
+        </>) : mode === "graphql" ? <GraphqlPane envId={envId} /> : <RealtimePane key={mode} kind={mode} />}
       </main>
       {showCode && <CodeModal req={req} onClose={() => setShowCode(false)} />}
       {showCookies && <CookieManager onClose={() => setShowCookies(false)} />}
