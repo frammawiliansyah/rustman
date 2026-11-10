@@ -3,7 +3,6 @@
 //! Serves a REST API under `/api/*` and the bundled web frontend
 //! (`./frontend/dist`, or a placeholder page when it has not been built).
 
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -404,23 +403,82 @@ fn db_path() -> PathBuf {
     dir.join("rustman.db")
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// Rustman desktop: local backend + native window.
+#[derive(clap::Parser, Debug)]
+#[command(name = "rustman-desktop", version, about)]
+struct Cli {
+    /// Run the backend server only, without opening a native window.
+    #[arg(long)]
+    headless: bool,
+    /// Port to listen on (falls back to $RUSTMAN_PORT, then 51730).
+    #[arg(short, long)]
+    port: Option<u16>,
+    /// Address to bind to.
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
+}
+
+fn has_display() -> bool {
+    std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok()
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    use clap::Parser;
     tracing_subscriber::fmt().init();
+    let cli = Cli::parse();
 
     let path = std::env::var_os("RUSTMAN_DB").map(PathBuf::from).unwrap_or_else(db_path);
     let storage = Arc::new(SqliteStorage::new(&path)?);
     let dist = std::env::var_os("RUSTMAN_DIST")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("./frontend/dist"));
-    let port: u16 = std::env::var("RUSTMAN_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(DEFAULT_PORT);
+    let port = cli
+        .port
+        .or_else(|| std::env::var("RUSTMAN_PORT").ok().and_then(|p| p.parse().ok()))
+        .unwrap_or(DEFAULT_PORT);
+    let host = cli.host;
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let rt = tokio::runtime::Runtime::new()?;
+    // Bind before opening the window so the webview never races the server.
+    let listener = rt.block_on(tokio::net::TcpListener::bind((host.as_str(), port)))?;
     tracing::info!("rustman db: {}", path.display());
-    tracing::info!("rustman listening on http://{}", listener.local_addr()?);
-    axum::serve(listener, build_app(storage, dist)).await?;
-    Ok(())
+    let app = build_app(storage, dist);
+
+    if cli.headless || !has_display() {
+        println!("Rustman desktop backend running in headless mode at http://{host}:{port}");
+        rt.block_on(async { axum::serve(listener, app).await })?;
+        return Ok(());
+    }
+
+    std::thread::spawn(move || {
+        if let Err(e) = rt.block_on(async { axum::serve(listener, app).await }) {
+            tracing::error!("server error: {e}");
+        }
+    });
+
+    let event_loop = tao::event_loop::EventLoop::new();
+    let window = tao::window::WindowBuilder::new()
+        .with_title("Rustman - API Client")
+        .with_inner_size(tao::dpi::LogicalSize::new(1280.0, 820.0))
+        .with_min_inner_size(tao::dpi::LogicalSize::new(960.0, 600.0))
+        .build(&event_loop)?;
+    // 0.0.0.0 / :: are bind-only addresses; connect via loopback instead.
+    let url_host = match host.as_str() {
+        "0.0.0.0" => "127.0.0.1".to_string(),
+        "::" => "[::1]".to_string(),
+        h if h.contains(':') && !h.starts_with('[') => format!("[{h}]"),
+        h => h.to_string(),
+    };
+    let _webview = wry::WebViewBuilder::new()
+        .with_url(&format!("http://{url_host}:{port}/"))
+        .build(&window)?;
+
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = tao::event_loop::ControlFlow::Wait;
+        if let tao::event::Event::WindowEvent { event: tao::event::WindowEvent::CloseRequested, .. } = event {
+            *control_flow = tao::event_loop::ControlFlow::Exit;
+        }
+    });
 }
 
 #[cfg(test)]
