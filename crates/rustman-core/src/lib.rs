@@ -1,5 +1,7 @@
 //! Core library and data models for rustman.
 
+pub mod engine;
+pub mod error;
 pub mod models;
 
 pub use models::assertion::{AssertionResult, AssertionType};
@@ -9,3 +11,5 @@ pub use models::http::{
     AuthConfig, HeaderPair, HttpMethod, HttpRequest, HttpResponse, QueryParam, RequestBody,
 };
 pub use models::telemetry::TimingMetrics;
+pub use engine::HttpExecutor;
+pub use error::RustmanError;
