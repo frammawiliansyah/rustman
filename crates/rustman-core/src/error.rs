@@ -15,6 +15,8 @@ pub enum RustmanError {
     Timeout,
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+    #[error("script error: {0}")]
+    ScriptError(String),
 }
 
 impl From<reqwest::Error> for RustmanError {

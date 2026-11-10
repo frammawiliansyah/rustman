@@ -5,6 +5,7 @@ pub mod engine;
 pub mod error;
 pub mod importers;
 pub mod models;
+pub mod scripting;
 pub mod variables;
 
 pub use models::assertion::{AssertionResult, AssertionType};
@@ -21,3 +22,4 @@ pub use importers::{
     import_postman_collection,
 };
 pub use variables::VariableResolver;
+pub use scripting::{ScriptOutput, ScriptRuntime, ScriptScope};
