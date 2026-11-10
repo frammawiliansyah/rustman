@@ -2,6 +2,7 @@
 
 pub mod engine;
 pub mod error;
+pub mod importers;
 pub mod models;
 
 pub use models::assertion::{AssertionResult, AssertionType};
