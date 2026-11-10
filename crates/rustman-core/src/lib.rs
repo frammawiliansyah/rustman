@@ -1,5 +1,6 @@
 //! Core library and data models for rustman.
 
+pub mod assertions;
 pub mod engine;
 pub mod error;
 pub mod importers;
