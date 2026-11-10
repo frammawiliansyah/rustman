@@ -14,8 +14,8 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use rustman_core::importers::{import_openapi, import_postman};
 use rustman_core::{
-    Collection, Environment, HistoryEntry, HttpExecutor, HttpRequest, HttpResponse, RustmanError,
-    SqliteStorage, TimingMetrics, VariableResolver,
+    generate_snippet, Collection, Environment, HistoryEntry, HttpExecutor, HttpRequest, HttpResponse, RustmanError,
+    SnippetTarget, SqliteStorage, TimingMetrics, VariableResolver,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -80,7 +80,22 @@ struct ExecuteReply {
     history_id: Option<Uuid>,
 }
 
+#[derive(Deserialize)]
+struct CodegenBody {
+    target: SnippetTarget,
+    request: HttpRequest,
+}
+
+#[derive(Serialize)]
+struct CodegenReply {
+    code: String,
+}
+
 // ---------- handlers ----------
+
+async fn codegen(Json(body): Json<CodegenBody>) -> Json<CodegenReply> {
+    Json(CodegenReply { code: generate_snippet(body.target, &body.request) })
+}
 
 async fn execute(State(st): State<AppState>, Json(body): Json<ExecuteBody>) -> ApiResult<ExecuteReply> {
     let mut resolver = VariableResolver::new();
@@ -176,6 +191,7 @@ fn build_app(storage: Arc<SqliteStorage>, dist: PathBuf) -> Router {
 
     let api = Router::new()
         .route("/execute", post(execute))
+        .route("/codegen", post(codegen))
         .route("/collections", get(list_collections).post(save_collection))
         .route("/collections/:id", delete(delete_collection))
         .route("/environments", get(list_environments).post(save_environment))
@@ -301,6 +317,29 @@ mod tests {
         assert_eq!(del.status(), 204);
         let del = c.delete(format!("{base}/api/collections/{}", imported.id)).send().await.unwrap();
         assert_eq!(del.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn codegen_endpoint() {
+        let base = spawn(PathBuf::from("/nonexistent")).await;
+        let c = reqwest::Client::new();
+        let req = HttpRequest::new("g", rustman_core::HttpMethod::GET, "https://example.com");
+        let r = c
+            .post(format!("{base}/api/codegen"))
+            .json(&json!({ "target": "curl", "request": req }))
+            .send()
+            .await
+            .unwrap();
+        assert!(r.status().is_success());
+        let v: serde_json::Value = r.json().await.unwrap();
+        assert_eq!(v["code"], "curl -X GET 'https://example.com'");
+        let bad = c
+            .post(format!("{base}/api/codegen"))
+            .json(&json!({ "target": "cobol", "request": req }))
+            .send()
+            .await
+            .unwrap();
+        assert!(bad.status().is_client_error());
     }
 
     #[tokio::test]
