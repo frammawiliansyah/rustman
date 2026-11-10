@@ -50,7 +50,7 @@ fn find_header<'a>(response: &'a HttpResponse, key: &str) -> Option<&'a str> {
 }
 
 /// Resolve a JSON pointer (`/a/b`) or dotted path (`a.b`, `items.0.id`, `$.a.b`).
-fn lookup<'a>(json: &'a Value, path: &str) -> Option<&'a Value> {
+pub(crate) fn lookup<'a>(json: &'a Value, path: &str) -> Option<&'a Value> {
     if path.is_empty() {
         return Some(json);
     }

@@ -35,6 +35,6 @@ pub use importers::{
 pub use variables::VariableResolver;
 pub use storage::{HistoryEntry, SqliteStorage};
 pub use scripting::{ScriptOutput, ScriptRuntime, ScriptScope};
-pub use realtime::{SseClient, SseEvent, WebSocketSession, WsDirection, WsMessage, WsPayloadType};
+pub use realtime::{SocketAssertion, SocketTestSession, SseClient, SseEvent, WebSocketSession, WsDirection, WsMessage, WsPayloadType};
 pub use mock::{MockRoute, MockServer};
 pub use graphql::{GraphQLIntrospector, GraphQLRequest, GraphQLResponse};
