@@ -1,0 +1,13 @@
+[package]
+name = "rustman-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Command line interface for rustman"
+
+[[bin]]
+name = "rustman"
+path = "src/main.rs"
+
+[dependencies]
+rustman-core = { path = "../rustman-core" }
+clap = { version = "4.5", features = ["derive"] }
