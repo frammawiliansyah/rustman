@@ -7,7 +7,7 @@ use colored::Colorize;
 use rustman_core::assertions::evaluate_all;
 use rustman_core::{
     AssertionResult, AssertionType, Collection, Environment, HttpExecutor, HttpRequest, Item,
-    VariableResolver,
+    IterationDataset, VariableResolver,
 };
 use serde::Serialize;
 
@@ -24,6 +24,20 @@ pub struct RunOptions {
     pub reporter: Reporter,
     /// Assertions applied to every request's response.
     pub assertions: Vec<AssertionType>,
+    /// Data file rows; row `i % len` feeds iteration `i`.
+    pub iteration_data: Option<IterationDataset>,
+    /// Number of iterations (default: dataset length, or 1 without data).
+    pub iteration_count: Option<usize>,
+}
+
+impl RunOptions {
+    pub fn effective_iterations(&self) -> usize {
+        match (self.iteration_count, &self.iteration_data) {
+            (Some(n), _) => n,
+            (None, Some(d)) => d.len(),
+            (None, None) => 1,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -41,6 +55,8 @@ impl From<AssertionResult> for AssertionReport {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct RequestReport {
+    /// 1-based iteration number.
+    pub iteration: usize,
     pub folder: Vec<String>,
     pub name: String,
     pub method: String,
@@ -64,6 +80,7 @@ impl RequestReport {
 #[derive(Clone, Debug, Serialize)]
 pub struct RunSummary {
     pub collection: String,
+    pub iterations: usize,
     pub total: usize,
     pub passed: usize,
     pub failed: usize,
@@ -105,10 +122,6 @@ pub async fn run_collection(
     opts: &RunOptions,
 ) -> Result<RunSummary> {
     let cli = opts.reporter == Reporter::Cli;
-    let mut resolver = VariableResolver::new();
-    if let Some(e) = env {
-        resolver = resolver.with_environment_model(e);
-    }
     let executor = HttpExecutor::new();
 
     let mut steps = Vec::new();
@@ -118,36 +131,57 @@ pub async fn run_collection(
         println!("{}\n", collection.name.bold());
     }
 
+    let iterations = opts.effective_iterations();
     let started = Instant::now();
     let mut reports: Vec<RequestReport> = Vec::new();
     let mut first = true;
+    let mut bailed = false;
 
-    for step in steps {
-        match step {
-            Step::Folder(depth, name) => {
-                if cli {
-                    println!("{}{} {}", "  ".repeat(depth), "❏".cyan(), name.bold());
-                }
-            }
-            Step::Request(folder, depth, req) => {
-                if !first && opts.delay_ms > 0 {
-                    tokio::time::sleep(Duration::from_millis(opts.delay_ms)).await;
-                }
-                first = false;
-                let report = run_one(&executor, &resolver, req, folder, &opts.assertions).await;
-                if cli {
-                    print_report(&report, depth);
-                }
-                let failed = report.failed();
-                reports.push(report);
-                if failed && opts.bail {
+    'iters: for iter in 0..iterations {
+        let mut resolver = VariableResolver::new();
+        if let Some(e) = env {
+            resolver = resolver.with_environment_model(e);
+        }
+        if let Some(row) = opts
+            .iteration_data
+            .as_ref()
+            .and_then(|d| if d.is_empty() { None } else { d.get_row(iter % d.len()) })
+        {
+            resolver = resolver.with_iteration_data(row.clone());
+        }
+        if cli {
+            println!("{}\n", format!("Iteration {} of {}", iter + 1, iterations).bold().underline());
+        }
+        for step in &steps {
+            match step {
+                Step::Folder(depth, name) => {
                     if cli {
-                        println!("\n{}", "Bailing out: request failed.".red());
+                        println!("{}{} {}", "  ".repeat(*depth), "❏".cyan(), name.bold());
                     }
-                    break;
+                }
+                Step::Request(folder, depth, req) => {
+                    if !first && opts.delay_ms > 0 {
+                        tokio::time::sleep(Duration::from_millis(opts.delay_ms)).await;
+                    }
+                    first = false;
+                    let mut report =
+                        run_one(&executor, &resolver, req, folder.clone(), &opts.assertions).await;
+                    report.iteration = iter + 1;
+                    if cli {
+                        print_report(&report, *depth);
+                    }
+                    let failed = report.failed();
+                    reports.push(report);
+                    if failed && opts.bail {
+                        bailed = true;
+                        break 'iters;
+                    }
                 }
             }
         }
+    }
+    if bailed && cli {
+        println!("\n{}", "Bailing out: request failed.".red());
     }
 
     let total = reports.len();
@@ -156,6 +190,7 @@ pub async fn run_collection(
     let avg = if responded.is_empty() { 0 } else { responded.iter().sum::<u64>() / responded.len() as u64 };
     let summary = RunSummary {
         collection: collection.name.clone(),
+        iterations,
         total,
         passed: total - failed,
         failed,
@@ -182,6 +217,7 @@ async fn run_one(
 ) -> RequestReport {
     let resolved = resolver.resolve_request(req);
     let mut report = RequestReport {
+        iteration: 1,
         folder,
         name: req.name.clone(),
         method: format!("{:?}", resolved.method),
@@ -226,6 +262,7 @@ fn print_report(r: &RequestReport, depth: usize) {
 
 fn print_summary(s: &RunSummary) {
     let rows = [
+        ("iterations", s.iterations.to_string()),
         ("total requests", s.total.to_string()),
         ("passed", s.passed.to_string()),
         ("failed", s.failed.to_string()),
@@ -297,7 +334,7 @@ mod tests {
     }
 
     fn opts(bail: bool, assertions: Vec<AssertionType>) -> RunOptions {
-        RunOptions { delay_ms: 0, bail, reporter: Reporter::Json, assertions }
+        RunOptions { delay_ms: 0, bail, reporter: Reporter::Json, assertions, iteration_data: None, iteration_count: None }
     }
 
     #[tokio::test]
@@ -315,6 +352,44 @@ mod tests {
         let s = run_collection(&c, Some(&env(&base)), &opts(false, vec![])).await.unwrap();
         assert_eq!((s.total, s.failed, s.exit_code()), (2, 1, 1));
         let s = run_collection(&c, Some(&env(&base)), &opts(true, vec![])).await.unwrap();
+        assert_eq!(s.total, 1);
+    }
+
+    #[tokio::test]
+    async fn multi_iteration_with_data() {
+        let base = server().await;
+        let c = coll(&["/{{path}}"]);
+        let mut o = opts(false, vec![]);
+        o.iteration_data = Some(IterationDataset::from_csv_str("path\nok\nmissing\nok2\n").unwrap());
+        let s = run_collection(&c, Some(&env(&base)), &o).await.unwrap();
+        assert_eq!(s.iterations, 3);
+        assert_eq!((s.total, s.passed, s.failed), (3, 2, 1));
+        assert_eq!(s.requests.iter().map(|r| r.iteration).collect::<Vec<_>>(), vec![1, 2, 3]);
+        assert!(s.requests[1].url.ends_with("/missing"));
+    }
+
+    #[tokio::test]
+    async fn iteration_count_without_data_and_cycling() {
+        let base = server().await;
+        let mut o = opts(false, vec![]);
+        o.iteration_count = Some(3);
+        let s = run_collection(&coll(&["/a", "/b"]), Some(&env(&base)), &o).await.unwrap();
+        assert_eq!((s.iterations, s.total), (3, 6));
+
+        let mut o = opts(false, vec![]);
+        o.iteration_data = Some(IterationDataset::from_json_str(r#"[{"path":"x"},{"path":"y"}]"#).unwrap());
+        o.iteration_count = Some(3);
+        let s = run_collection(&coll(&["/{{path}}"]), Some(&env(&base)), &o).await.unwrap();
+        let urls: Vec<_> = s.requests.iter().map(|r| r.url.rsplit('/').next().unwrap().to_string()).collect();
+        assert_eq!(urls, vec!["x", "y", "x"]);
+    }
+
+    #[tokio::test]
+    async fn bail_stops_all_iterations() {
+        let base = server().await;
+        let mut o = opts(true, vec![]);
+        o.iteration_count = Some(3);
+        let s = run_collection(&coll(&["/missing"]), Some(&env(&base)), &o).await.unwrap();
         assert_eq!(s.total, 1);
     }
 }

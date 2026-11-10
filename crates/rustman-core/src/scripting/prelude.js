@@ -18,8 +18,16 @@
   var env = store(input.environment);
   var vars = store(input.variables);
   var globals = store(input.globals);
+  var iterData = store(input.iterationData);
+  var iterationData = {
+    get: iterData.get, has: iterData.has, toObject: iterData.toObject,
+    toJSON: iterData.toObject
+  };
   var pmVars = Object.assign({}, vars, {
-    get: function (k) { return vars.has(k) ? vars.get(k) : env.get(k); }
+    get: function (k) {
+      if (iterData.has(k)) return iterData.get(k);
+      return vars.has(k) ? vars.get(k) : env.get(k);
+    }
   });
 
   function AssertionError(msg) { this.name = "AssertionError"; this.message = msg; }
@@ -152,6 +160,7 @@
     environment: env,
     variables: pmVars,
     globals: globals,
+    iterationData: iterationData,
     response: response,
     info: { eventName: input.event },
     expect: expect,

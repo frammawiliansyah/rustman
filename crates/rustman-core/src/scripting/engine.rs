@@ -31,6 +31,9 @@ pub struct ScriptScope {
     pub environment: HashMap<String, String>,
     pub variables: HashMap<String, String>,
     pub globals: HashMap<String, String>,
+    /// Current row of the iteration data file (read-only in scripts).
+    #[serde(default)]
+    pub iteration_data: HashMap<String, String>,
 }
 
 /// Result of running a script.
@@ -103,6 +106,7 @@ impl ScriptRuntime {
             "environment": scope.environment,
             "variables": scope.variables,
             "globals": scope.globals,
+            "iterationData": scope.iteration_data,
             "response": response_json,
         });
         // Double-encode: a JS string literal holding the JSON text.
@@ -137,6 +141,7 @@ impl ScriptRuntime {
                 environment: c.environment,
                 variables: c.variables,
                 globals: c.globals,
+                iteration_data: scope.iteration_data.clone(),
             },
             assertions: c.results,
             console: c.logs,
@@ -334,6 +339,31 @@ mod tests {
         assert_eq!(out.console, vec!["hello 1"]);
         // The input scope is untouched.
         assert!(scope.environment.contains_key("host"));
+    }
+
+    #[test]
+    fn pm_iteration_data_get_and_to_object() {
+        let mut scope = ScriptScope::default();
+        scope.iteration_data.insert("username".into(), "alice".into());
+        scope.iteration_data.insert("id".into(), "1".into());
+        let out = ScriptRuntime::new()
+            .run_pre_request(
+                r#"
+                pm.variables.set("u", pm.iterationData.get("username"));
+                pm.variables.set("has", pm.iterationData.has("id"));
+                pm.variables.set("missing", String(pm.iterationData.get("nope")));
+                pm.variables.set("obj", JSON.stringify(pm.iterationData.toObject()));
+                "#,
+                &scope,
+            )
+            .unwrap();
+        assert_eq!(out.scope.variables["u"], "alice");
+        assert_eq!(out.scope.variables["has"], "true");
+        assert_eq!(out.scope.variables["missing"], "undefined");
+        let obj: serde_json::Value = serde_json::from_str(&out.scope.variables["obj"]).unwrap();
+        assert_eq!(obj["username"], "alice");
+        assert_eq!(obj["id"], "1");
+        assert_eq!(out.scope.iteration_data, scope.iteration_data);
     }
 
     #[test]

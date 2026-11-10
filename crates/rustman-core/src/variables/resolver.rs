@@ -8,13 +8,14 @@ use crate::models::http::{AuthConfig, HeaderPair, HttpRequest, QueryParam, Reque
 
 /// Resolves `{{var}}` placeholders using layered variables.
 ///
-/// Precedence (highest first): Environment > Collection > Global.
+/// Precedence (highest first): IterationData > Environment > Collection > Global.
 /// Unknown variables are left untouched.
 #[derive(Debug, Clone, Default)]
 pub struct VariableResolver {
     global: HashMap<String, String>,
     collection: HashMap<String, String>,
     environment: HashMap<String, String>,
+    iteration_data: HashMap<String, String>,
 }
 
 impl VariableResolver {
@@ -49,6 +50,12 @@ impl VariableResolver {
         self
     }
 
+    /// Sets the iteration-data layer (one row of a CSV/JSON data file).
+    pub fn with_iteration_data(mut self, vars: HashMap<String, String>) -> Self {
+        self.iteration_data = vars;
+        self
+    }
+
     /// Loads enabled variables of an `Environment` as the environment layer.
     pub fn with_environment_model(mut self, env: &Environment) -> Self {
         self.environment = env
@@ -64,8 +71,9 @@ impl VariableResolver {
         if let Some(rest) = name.strip_prefix('$') {
             return Self::dynamic(rest);
         }
-        self.environment
+        self.iteration_data
             .get(name)
+            .or_else(|| self.environment.get(name))
             .or_else(|| self.collection.get(name))
             .or_else(|| self.global.get(name))
             .cloned()
@@ -182,6 +190,14 @@ mod tests {
         r.set_collection("c_only", "C");
         r.set_environment("host", "env.com");
         r
+    }
+
+    #[test]
+    fn iteration_data_has_highest_priority() {
+        let mut data = HashMap::new();
+        data.insert("host".to_string(), "iter.com".to_string());
+        let r = layered().with_iteration_data(data);
+        assert_eq!(r.resolve("https://{{host}}/{{c_only}}"), "https://iter.com/C");
     }
 
     #[test]
