@@ -12,10 +12,6 @@
     <path d="M358 352C318 352 332 468 296 512C332 556 318 672 358 672"/>
     <path d="M666 352C706 352 692 468 728 512C692 556 706 672 666 672"/>
   </g>
-  <!-- Three dots between the braces: the payload -->
-  <g fill="#ffffff">
-    <circle cx="436" cy="512" r="26"/>
-    <circle cx="512" cy="512" r="26"/>
-    <circle cx="588" cy="512" r="26"/>
-  </g>
+  <!-- Letter R between the braces -->
+  <path d="M458 388V636M458 388H520A62 62 0 0 1 520 512H458M524 512L586 636" fill="none" stroke="#ffffff" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
