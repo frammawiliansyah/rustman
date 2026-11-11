@@ -324,8 +324,8 @@ kbd { font: 11px var(--mono); background: var(--card); border: 1px solid var(--b
 .mcp-card .mcp-lead { max-width: 80ch; }
 .mcp-card code, .mcp-hero code { font: 12px var(--mono); background: var(--card); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; color: var(--text); }
 .mcp-tab { padding-top: 12px; }
-.mcp-code { position: relative; display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; background: #0a0d13; border: 1px solid var(--border); border-radius: 9px; }
-.mcp-code pre { flex: 1; margin: 0; overflow-x: auto; font: 12px/1.6 var(--mono); color: #cbd5ff; white-space: pre; }
+.mcp-code { position: relative; display: flex; gap: 10px; align-items: center; padding: 18px 16px; min-height: 84px; background: #0a0d13; border: 1px solid var(--border); border-radius: 9px; }
+.mcp-code pre { flex: 1; margin: 0; overflow-x: auto; font: 12.5px/1.8 var(--mono); color: #cbd5ff; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mcp-kv { display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; align-items: center; margin: 4px 0 10px; }
 .mcp-kv dt { color: var(--faint); font-size: 12px; }
 .mcp-kv dd { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; word-break: break-all; }
