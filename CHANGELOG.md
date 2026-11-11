@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-11
+
+### Added
+
+- MIT license, contributing guide, security policy and issue templates
+- One-line installers for macOS, Linux (`install.sh`) and Windows (`install.ps1`) with checksum verification, an uninstall option and a CLI-only option
+- Desktop app builds for Linux and Windows, in addition to macOS
+- Install instructions on every release page
+
+### Changed
+
+- Release assets use stable names without the version, so `releases/latest/download/<asset>` links always work
+- The desktop app now finds its frontend next to the executable or inside the macOS app bundle
+- The Windows desktop app no longer opens a console window
+
+### Fixed
+
+- The desktop app on macOS and Windows no longer starts in headless mode because of a Linux-only display check
+
 ## [0.1.0] - 2026-11-11
 
 Initial release.
@@ -30,5 +49,6 @@ Initial release.
 - CLI reporters: `cli`, `json` and `htmlextra`
 - Desktop app with a local Axum backend, a React frontend and a native Tao and Wry window
 
-[Unreleased]: https://github.com/frammawiliansyah/rustman/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/frammawiliansyah/rustman/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/frammawiliansyah/rustman/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/frammawiliansyah/rustman/releases/tag/v0.1.0

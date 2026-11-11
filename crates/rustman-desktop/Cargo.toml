@@ -1,6 +1,8 @@
 [package]
 name = "rustman-desktop"
-version = "0.1.0"
+version = "0.1.1"
+license = "MIT"
+repository = "https://github.com/frammawiliansyah/rustman"
 edition = "2021"
 description = "Local backend server and IPC bridge for the rustman desktop UI"
 

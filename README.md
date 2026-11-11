@@ -18,6 +18,36 @@ A Postman-compatible API client written in Rust. It ships as a headless CLI runn
 - SQLite-backed storage
 - Hashing and HMAC helpers available to scripts
 
+## Install
+
+### macOS and Linux
+
+```sh
+curl -fsSL https://github.com/frammawiliansyah/rustman/releases/latest/download/install.sh | sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://github.com/frammawiliansyah/rustman/releases/latest/download/install.ps1 | iex
+```
+
+The installers verify checksums, need no administrator rights, and set up:
+
+- `rustman`, the CLI runner
+- `rustman-desktop`, which opens the desktop app from the terminal
+- the desktop app itself: `Rustman.app` on macOS, an application menu entry on Linux, a Start Menu shortcut on Windows
+
+Supported platforms: macOS (Apple Silicon and Intel), Linux x86_64 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL and CentOS Stream 9+) and Windows 10 or newer. The Linux desktop app needs WebKitGTK 4.1 and GTK 3 (`sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 libxdo3`, or `sudo dnf install webkit2gtk4.1 gtk3 xdotool`).
+
+Options are set with environment variables: `RUSTMAN_NO_DESKTOP=1` installs the CLI only, `RUSTMAN_VERSION=vX.Y.Z` installs a specific version and `RUSTMAN_UNINSTALL=1` removes Rustman. For example:
+
+```sh
+curl -fsSL https://github.com/frammawiliansyah/rustman/releases/latest/download/install.sh | RUSTMAN_NO_DESKTOP=1 sh
+```
+
+You can also download archives manually from the [releases page](https://github.com/frammawiliansyah/rustman/releases). Every release lists the install commands and the checksums. macOS builds are not notarized, so after a manual download run `xattr -dr com.apple.quarantine Rustman.app`.
+
 ## Repository layout
 
 ```
@@ -34,7 +64,7 @@ frontend/            React + TypeScript + Vite UI used by the desktop app
 - Node.js and pnpm, for the frontend
 - On Linux, the GTK and WebKitGTK development packages needed by Wry (for example `libwebkit2gtk-4.1-dev` on Debian and Ubuntu)
 
-## Build
+## Build from source
 
 ```sh
 # Rust workspace
@@ -109,43 +139,7 @@ For frontend development, run `pnpm dev` inside `frontend/`.
 
 ## Releases
 
-Each [GitHub release](../../releases) includes:
-
-| Asset | Platform |
-| --- | --- |
-| `rustman-vX.Y.Z-aarch64-apple-darwin.tar.gz` | CLI, macOS Apple Silicon |
-| `rustman-vX.Y.Z-x86_64-apple-darwin.tar.gz` | CLI, macOS Intel |
-| `rustman-desktop-vX.Y.Z-aarch64-apple-darwin.zip` | Desktop app (`Rustman.app`), macOS Apple Silicon |
-| `rustman-desktop-vX.Y.Z-x86_64-apple-darwin.zip` | Desktop app (`Rustman.app`), macOS Intel |
-| `rustman-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` | CLI, Linux |
-| `rustman-vX.Y.Z-x86_64-pc-windows-msvc.zip` | CLI, Windows |
-| `SHA256SUMS.txt` | Checksums for all assets |
-
-### Installing on macOS
-
-The easiest way is the install script. It uses your existing SSH key, so you only need `git`. It clones the `dist` branch (release binaries only) into a temporary folder, installs, and deletes the folder, so no copy of the repository stays on your Mac:
-
-```sh
-d=$(mktemp -d) && git clone -q --depth 1 -b dist git@github.com:frammawiliansyah/rustman.git "$d" \
-  && bash "$d/install-macos.sh"; rm -rf "$d"
-```
-
-To update, run the same command again. The `dist` branch always holds the latest release; older versions are available from the GitHub release page.
-
-It picks the right build for your Mac (Apple Silicon or Intel) and installs:
-
-- `Rustman.app` in `/Applications`, so it appears in Launchpad and Spotlight
-- `rustman` (CLI) and `rustman-desktop` in `~/.local/bin`, so both work from zsh
-
-```sh
-rustman run collection.json
-rustman-desktop            # opens the desktop window
-rustman-desktop --headless # backend only
-```
-
-To install manually, download the zip or tar.gz from the release page and remove the quarantine flag with `xattr -dr com.apple.quarantine Rustman.app`. Builds are not notarized.
-
-Releases follow semantic versioning and are published by pushing a `vX.Y.Z` tag. See [CHANGELOG.md](CHANGELOG.md) for the history.
+Releases follow semantic versioning and are published by pushing a `vX.Y.Z` tag, which builds and uploads the binaries for all platforms. See [CHANGELOG.md](CHANGELOG.md) for the history.
 
 ## Testing
 
@@ -156,3 +150,11 @@ cargo test --workspace
 ## Status
 
 The project is under active development. The CLI and core APIs may change between releases.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). To report a security issue, see [SECURITY.md](SECURITY.md).
+
+## License
+
+Rustman is released under the [MIT License](LICENSE).

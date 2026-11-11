@@ -3,6 +3,8 @@
 //! Serves a REST API under `/api/*` and the bundled web frontend
 //! (`./frontend/dist`, or a placeholder page when it has not been built).
 
+#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 

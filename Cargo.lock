@@ -3241,7 +3241,7 @@ dependencies = [
 
 [[package]]
 name = "rustman-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3255,7 +3255,7 @@ dependencies = [
 
 [[package]]
 name = "rustman-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -3281,7 +3281,7 @@ dependencies = [
 
 [[package]]
 name = "rustman-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "clap",

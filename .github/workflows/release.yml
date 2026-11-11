@@ -8,11 +8,11 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  cli:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             archive: tar.gz
           - os: macos-latest
@@ -36,23 +36,96 @@ jobs:
       - name: Package (unix)
         if: matrix.archive == 'tar.gz'
         run: |
-          name=rustman-${{ github.ref_name }}-${{ matrix.target }}
+          name=rustman-${{ matrix.target }}
           mkdir "$name"
-          cp target/${{ matrix.target }}/release/rustman README.md CHANGELOG.md "$name"/
+          cp target/${{ matrix.target }}/release/rustman LICENSE README.md "$name"/
           tar czf "$name.tar.gz" "$name"
           echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
       - name: Package (windows)
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $name = "rustman-${{ github.ref_name }}-${{ matrix.target }}"
+          $name = "rustman-${{ matrix.target }}"
           New-Item -ItemType Directory $name | Out-Null
-          Copy-Item target/${{ matrix.target }}/release/rustman.exe, README.md, CHANGELOG.md $name
+          Copy-Item target/${{ matrix.target }}/release/rustman.exe, LICENSE, README.md $name
           Compress-Archive $name "$name.zip"
           "ASSET=$name.zip" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}
+          name: cli-${{ matrix.target }}
+          path: ${{ env.ASSET }}
+
+  desktop-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Build desktop app
+        run: cargo build --release --locked -p rustman-desktop
+      - name: Package
+        run: |
+          name=rustman-desktop-x86_64-unknown-linux-gnu
+          mkdir "$name"
+          cp target/release/rustman-desktop LICENSE "$name"/
+          cp -R frontend/dist "$name/dist"
+          tar czf "$name.tar.gz" "$name"
+          echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: ${{ env.ASSET }}
+
+  desktop-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Build desktop app
+        run: cargo build --release --locked -p rustman-desktop
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "rustman-desktop-x86_64-pc-windows-msvc"
+          New-Item -ItemType Directory $name | Out-Null
+          Copy-Item target/release/rustman-desktop.exe, LICENSE $name
+          Copy-Item -Recurse frontend/dist "$name/dist"
+          Compress-Archive $name "$name.zip"
+          "ASSET=$name.zip" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
           path: ${{ env.ASSET }}
 
   desktop-macos:
@@ -88,6 +161,7 @@ jobs:
           mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
           cp target/${{ matrix.target }}/release/rustman-desktop "$app/Contents/MacOS/rustman-desktop"
           cp -R frontend/dist "$app/Contents/Resources/dist"
+          cp LICENSE "$app/Contents/Resources/LICENSE"
           cat > "$app/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -106,16 +180,16 @@ jobs:
           </plist>
           PLIST
           codesign --force --deep --sign - "$app"
-          name=rustman-desktop-${{ github.ref_name }}-${{ matrix.target }}
+          name=rustman-desktop-${{ matrix.target }}
           ditto -c -k --keepParent "$app" "$name.zip"
           echo "ASSET=$name.zip" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.target }}
+          name: desktop-macos-${{ matrix.target }}
           path: ${{ env.ASSET }}
 
   release:
-    needs: [build, desktop-macos]
+    needs: [cli, desktop-linux, desktop-windows, desktop-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -123,27 +197,20 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Extract release notes
-        run: |
-          v="${GITHUB_REF_NAME#v}"
-          awk -v v="$v" '$0 ~ "^## \\["v"\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md
       - name: Generate checksums
         working-directory: dist
         run: sha256sum * > SHA256SUMS.txt
+      - name: Add installers
+        run: |
+          sed "s/RUSTMAN_VERSION:-latest/RUSTMAN_VERSION:-$GITHUB_REF_NAME/" install.sh > dist/install.sh
+          sed "s/else { \"latest\" }/else { \"$GITHUB_REF_NAME\" }/" install.ps1 > dist/install.ps1
+          grep -q "$GITHUB_REF_NAME" dist/install.sh && grep -q "$GITHUB_REF_NAME" dist/install.ps1
+      - name: Build release notes
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          sed "s/{{TAG}}/$GITHUB_REF_NAME/g" .github/release-notes.md > notes.md
+          awk -v v="$v" '$0 ~ "^## \\["v"\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md >> notes.md
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file notes.md
-      - name: Publish binaries to the dist branch
-        run: |
-          mkdir pub
-          cp dist/* pub/
-          cp scripts/install-macos.sh pub/
-          echo "$GITHUB_REF_NAME" > pub/VERSION
-          cd pub
-          git init -q -b dist
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -q -m "Release $GITHUB_REF_NAME"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" dist
