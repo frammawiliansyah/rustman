@@ -107,6 +107,10 @@ Environment variables:
 
 For frontend development, run `pnpm dev` inside `frontend/`.
 
+## Releases
+
+Prebuilt CLI binaries for Linux, macOS and Windows are attached to each [GitHub release](../../releases). See [CHANGELOG.md](CHANGELOG.md) for the history. Releases follow semantic versioning and are published by pushing a `vX.Y.Z` tag.
+
 ## Testing
 
 ```sh
