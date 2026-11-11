@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- New app icon that matches the app's own design: the indigo gradient tile and white glyph of the sidebar logo, instead of the previous orange accent and dark gradient
+
 ## [0.4.0] - 2026-11-11
 
 ### Added

@@ -1,86 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Rustman</title>
   <defs>
-    <!-- Background Gradient: Dark-navy (#0b0e17) to Indigo (#6366f1) -->
-    <linearGradient id="bgGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#0b0e17" />
-      <stop offset="55%" stop-color="#141738" />
-      <stop offset="100%" stop-color="#6366f1" />
+    <!-- Same indigo gradient as the logo tile and primary buttons in the app UI -->
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#6366f1"/>
     </linearGradient>
-
-    <!-- Subtle Indigo Atmospheric Glow -->
-    <radialGradient id="indigoGlow" cx="82%" cy="18%" r="65%">
-      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.32" />
-      <stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
-    </radialGradient>
-
-    <!-- Squircle Specular Rim Highlight -->
-    <linearGradient id="rimGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.2" />
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.03" />
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".2"/>
+      <stop offset=".55" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
-
-    <!-- White Glyph Subtle Depth Gradient -->
-    <linearGradient id="whiteGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" />
-      <stop offset="100%" stop-color="#e2e8f0" />
-    </linearGradient>
-
-    <!-- Rust-Orange Accent Gradient (#fb923c to #f97316) -->
-    <linearGradient id="rustGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fb923c" />
-      <stop offset="100%" stop-color="#f97316" />
-    </linearGradient>
-
-    <!-- Modern Elevation Drop Shadow -->
-    <filter id="subtleShadow" x="-15%" y="-15%" width="135%" height="135%">
-      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity="0.52" />
-    </filter>
   </defs>
-
-  <!-- Squircle Background (~22% radius: rx=225) -->
-  <rect width="1024" height="1024" rx="225" fill="url(#bgGrad)" />
-  <rect width="1024" height="1024" rx="225" fill="url(#indigoGlow)" />
-  <rect x="1.5" y="1.5" width="1021" height="1021" rx="223.5" fill="none" stroke="url(#rimGrad)" stroke-width="3" />
-
-  <!-- Stylized Geometric "R" Motif with API Request/Response Opposing Arrow Cutouts -->
-  <g filter="url(#subtleShadow)">
-    <!-- White Primary Form: Solid Spine, Upper Bowl, and Request/Response Arrow Cutouts -->
-    <path fill-rule="evenodd" fill="url(#whiteGrad)" d="
-      M 264,812
-      A 32,32 0 0,1 232,780
-      L 232,244
-      A 32,32 0 0,1 264,212
-      L 580,212
-      C 684,212 756,280 756,362
-      C 756,432 708,488 620,488
-      L 432,488
-      L 432,464
-      L 352,512
-      L 392,536
-      L 392,780
-      A 32,32 0 0,1 360,812
-      L 264,812 Z
-      M 392,320
-      L 500,320
-      L 500,272
-      L 632,362
-      L 500,452
-      L 500,404
-      L 392,404 Z
-    " />
-
-    <!-- Warm Rust-Orange Accent: Dynamic Forward Leg -->
-    <path fill="url(#rustGrad)" d="
-      M 392,536
-      L 432,536
-      L 432,560
-      L 540,560
-      L 768,788
-      A 28,28 0 0,1 740,812
-      L 624,812
-      A 20,20 0 0,1 606,796
-      L 392,616
-      Z
-    " />
+  <rect width="1024" height="1024" rx="230" fill="url(#tile)"/>
+  <rect width="1024" height="1024" rx="230" fill="url(#sheen)"/>
+  <rect x="2" y="2" width="1020" height="1020" rx="228" fill="none" stroke="#ffffff" stroke-opacity=".22" stroke-width="4"/>
+  <g transform="translate(-36 -11)">
+  <!-- R: stem, bowl and leg drawn as one thick rounded stroke -->
+  <path d="M372 800V246H562a164 164 0 0 1 0 328H372M548 574L706 800" fill="none" stroke="#ffffff" stroke-width="116" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Request arrow cut into the bowl -->
+  <path d="M462 380H574V348L648 410L574 472V440H462Z" fill="#6366f1"/>
   </g>
 </svg>
