@@ -123,20 +123,24 @@ Each [GitHub release](../../releases) includes:
 
 ### Installing on macOS
 
-The builds are not signed with an Apple Developer ID or notarized, so Gatekeeper blocks them after download. Remove the quarantine flag once:
+The easiest way is the install script. It needs the [GitHub CLI](https://cli.github.com) (`brew install gh && gh auth login`) because the repository is private:
 
 ```sh
-# Desktop app
-unzip rustman-desktop-vX.Y.Z-aarch64-apple-darwin.zip
-xattr -dr com.apple.quarantine Rustman.app
-mv Rustman.app /Applications/
-
-# CLI
-tar xzf rustman-vX.Y.Z-aarch64-apple-darwin.tar.gz
-xattr -d com.apple.quarantine rustman-vX.Y.Z-aarch64-apple-darwin/rustman
+gh api repos/frammawiliansyah/rustman/contents/scripts/install-macos.sh --jq .content | base64 -d | bash
 ```
 
-Use the `aarch64` files on M-series Macs and the `x86_64` files on Intel Macs.
+It picks the right build for your Mac (Apple Silicon or Intel) and installs:
+
+- `Rustman.app` in `/Applications`, so it appears in Launchpad and Spotlight
+- `rustman` (CLI) and `rustman-desktop` in `~/.local/bin`, so both work from zsh
+
+```sh
+rustman run collection.json
+rustman-desktop            # opens the desktop window
+rustman-desktop --headless # backend only
+```
+
+To install manually, download the zip or tar.gz from the release page and remove the quarantine flag with `xattr -dr com.apple.quarantine Rustman.app`. Builds are not notarized.
 
 Releases follow semantic versioning and are published by pushing a `vX.Y.Z` tag. See [CHANGELOG.md](CHANGELOG.md) for the history.
 
