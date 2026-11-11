@@ -440,8 +440,36 @@ struct Cli {
     host: String,
 }
 
+#[cfg(target_os = "linux")]
 fn has_display() -> bool {
     std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok()
+}
+
+// macOS and Windows always have a window server available.
+#[cfg(not(target_os = "linux"))]
+fn has_display() -> bool {
+    true
+}
+
+/// Locate the built frontend: `RUSTMAN_DIST`, then `./frontend/dist`, then the
+/// locations used by packaged builds (next to the executable, or the macOS
+/// `.app` bundle's `Contents/Resources/dist`).
+fn resolve_dist() -> PathBuf {
+    if let Some(p) = std::env::var_os("RUSTMAN_DIST") {
+        return PathBuf::from(p);
+    }
+    let local = PathBuf::from("./frontend/dist");
+    if local.join("index.html").is_file() {
+        return local;
+    }
+    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(PathBuf::from)) {
+        for cand in [dir.join("dist"), dir.join("../Resources/dist")] {
+            if cand.join("index.html").is_file() {
+                return cand;
+            }
+        }
+    }
+    local
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -451,9 +479,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let path = std::env::var_os("RUSTMAN_DB").map(PathBuf::from).unwrap_or_else(db_path);
     let storage = Arc::new(SqliteStorage::new(&path)?);
-    let dist = std::env::var_os("RUSTMAN_DIST")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("./frontend/dist"));
+    let dist = resolve_dist();
     let port = cli
         .port
         .or_else(|| std::env::var("RUSTMAN_PORT").ok().and_then(|p| p.parse().ok()))

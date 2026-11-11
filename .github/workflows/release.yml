@@ -18,6 +18,9 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             archive: tar.gz
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive: tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             archive: zip
@@ -52,8 +55,67 @@ jobs:
           name: ${{ matrix.target }}
           path: ${{ env.ASSET }}
 
+  desktop-macos:
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Build desktop app
+        run: cargo build --release --locked -p rustman-desktop --target ${{ matrix.target }}
+      - name: Assemble Rustman.app
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          app=Rustman.app
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp target/${{ matrix.target }}/release/rustman-desktop "$app/Contents/MacOS/rustman-desktop"
+          cp -R frontend/dist "$app/Contents/Resources/dist"
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>Rustman</string>
+            <key>CFBundleDisplayName</key><string>Rustman</string>
+            <key>CFBundleIdentifier</key><string>dev.rustman.app</string>
+            <key>CFBundleExecutable</key><string>rustman-desktop</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleVersion</key><string>$version</string>
+            <key>CFBundleShortVersionString</key><string>$version</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          codesign --force --deep --sign - "$app"
+          name=rustman-desktop-${{ github.ref_name }}-${{ matrix.target }}
+          ditto -c -k --keepParent "$app" "$name.zip"
+          echo "ASSET=$name.zip" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: ${{ env.ASSET }}
+
   release:
-    needs: build
+    needs: [build, desktop-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,6 +127,9 @@ jobs:
         run: |
           v="${GITHUB_REF_NAME#v}"
           awk -v v="$v" '$0 ~ "^## \\["v"\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -109,7 +109,36 @@ For frontend development, run `pnpm dev` inside `frontend/`.
 
 ## Releases
 
-Prebuilt CLI binaries for Linux, macOS and Windows are attached to each [GitHub release](../../releases). See [CHANGELOG.md](CHANGELOG.md) for the history. Releases follow semantic versioning and are published by pushing a `vX.Y.Z` tag.
+Each [GitHub release](../../releases) includes:
+
+| Asset | Platform |
+| --- | --- |
+| `rustman-vX.Y.Z-aarch64-apple-darwin.tar.gz` | CLI, macOS Apple Silicon |
+| `rustman-vX.Y.Z-x86_64-apple-darwin.tar.gz` | CLI, macOS Intel |
+| `rustman-desktop-vX.Y.Z-aarch64-apple-darwin.zip` | Desktop app (`Rustman.app`), macOS Apple Silicon |
+| `rustman-desktop-vX.Y.Z-x86_64-apple-darwin.zip` | Desktop app (`Rustman.app`), macOS Intel |
+| `rustman-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` | CLI, Linux |
+| `rustman-vX.Y.Z-x86_64-pc-windows-msvc.zip` | CLI, Windows |
+| `SHA256SUMS.txt` | Checksums for all assets |
+
+### Installing on macOS
+
+The builds are not signed with an Apple Developer ID or notarized, so Gatekeeper blocks them after download. Remove the quarantine flag once:
+
+```sh
+# Desktop app
+unzip rustman-desktop-vX.Y.Z-aarch64-apple-darwin.zip
+xattr -dr com.apple.quarantine Rustman.app
+mv Rustman.app /Applications/
+
+# CLI
+tar xzf rustman-vX.Y.Z-aarch64-apple-darwin.tar.gz
+xattr -d com.apple.quarantine rustman-vX.Y.Z-aarch64-apple-darwin/rustman
+```
+
+Use the `aarch64` files on M-series Macs and the `x86_64` files on Intel Macs.
+
+Releases follow semantic versioning and are published by pushing a `vX.Y.Z` tag. See [CHANGELOG.md](CHANGELOG.md) for the history.
 
 ## Testing
 
