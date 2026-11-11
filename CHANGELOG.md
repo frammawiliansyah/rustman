@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- New app icon in the app's own colors: the indigo gradient tile of the sidebar logo with a bold white R, instead of the previous orange accent and dark gradient
+- New app icon in the dark theme of the app: an indigo hexagon (a metal nut, for Rust and strength) holding curly braces (API) and a lightning bolt (speed), on a dark tile with an indigo glow, using only the app's own colors
 
 ## [0.4.0] - 2026-11-11
 
