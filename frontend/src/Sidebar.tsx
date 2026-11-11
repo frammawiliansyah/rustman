@@ -133,7 +133,17 @@ export function Sidebar(p: {
     <aside className="sidebar">
       <div className="brand">
         <span className="brand-logo">
-          <svg viewBox="0 0 1024 1024" width="14" height="14" aria-hidden="true"><path transform="translate(-18 0)" d="M404 292V736M404 292H560A112 112 0 0 1 560 516H404M548 516L672 736" fill="none" stroke="currentColor" strokeWidth="110" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <svg viewBox="190 230 644 590" width="18" height="18" aria-hidden="true">
+            <g fill="none" stroke="currentColor" strokeWidth="40" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M352 612L262 664L236 746M672 612L762 664L788 746M372 656L308 728L300 800M652 656L716 728L724 800" />
+              <path d="M356 540C290 520 262 470 270 400M668 540C734 520 762 470 754 400" strokeWidth="50" />
+            </g>
+            <g fill="currentColor">
+              <circle cx="268" cy="330" r="82" /><circle cx="756" cy="330" r="82" />
+              <ellipse cx="512" cy="580" rx="204" ry="136" />
+            </g>
+            <g fill="var(--accent)"><polygon points="268,336 226,236 310,236" /><polygon points="756,336 714,236 798,236" /></g>
+          </svg>
         </span>
         <b>Rustman</b>
       </div>

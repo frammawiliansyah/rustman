@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Flat design: no gradients anywhere. The UI uses solid colors for buttons, the logo tile, the active tab indicator, the progress bar, the agent badge and the AI Agents page, and the loading skeleton pulses instead of shimmering
-- New app icon: a round indigo badge with a bold white R, using only the app's own colors, with no gradients. The logo in the sidebar uses the same mark
+- New app icon: a round indigo badge with a white crab, the Rust mascot, using only the app's own colors, with no gradients. The logo in the sidebar uses the same crab
 - Simpler AI Agents page: a short intro, two numbered steps (connect, ask), one safety line, and the tool list and access token folded away until needed
 
 ## [0.4.0] - 2026-11-11

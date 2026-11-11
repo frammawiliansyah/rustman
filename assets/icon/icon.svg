@@ -1,8 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <title>Rustman</title>
-  <!-- Flat round badge with one bold letter, colors from the app UI: accent #6366f1 / #818cf8, dark #4338ca -->
+  <!-- Flat round badge with a crab (the Rust mascot). Colors from the app UI: accent #6366f1 / #818cf8 -->
   <circle cx="512" cy="512" r="500" fill="#6366f1"/>
   <circle cx="512" cy="512" r="470" fill="none" stroke="#818cf8" stroke-width="10"/>
-  <!-- Letter R -->
-  <path transform="translate(-18 0)" d="M404 292V736M404 292H560A112 112 0 0 1 560 516H404M548 516L672 736" fill="none" stroke="#ffffff" stroke-width="100" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#ffffff" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <!-- legs -->
+    <g fill="none" stroke-width="34">
+      <path d="M352 612L262 664L236 746"/><path d="M372 656L308 728L300 800"/>
+      <path d="M672 612L762 664L788 746"/><path d="M652 656L716 728L724 800"/>
+    </g>
+    <!-- arms -->
+    <g fill="none" stroke-width="46">
+      <path d="M356 540C290 520 262 470 270 400"/><path d="M668 540C734 520 762 470 754 400"/>
+    </g>
+    <!-- claws -->
+    <circle cx="268" cy="330" r="78" stroke="none"/><circle cx="756" cy="330" r="78" stroke="none"/>
+    <!-- eyes -->
+    <g fill="none" stroke-width="30"><path d="M448 470V420"/><path d="M576 470V420"/></g>
+    <circle cx="448" cy="396" r="34" stroke="none"/><circle cx="576" cy="396" r="34" stroke="none"/>
+    <!-- body -->
+    <ellipse cx="512" cy="580" rx="204" ry="136" stroke="none"/>
+  </g>
+  <!-- claw notches, pupils, smile -->
+  <g fill="#6366f1">
+    <polygon points="268,336 232,246 304,246"/><polygon points="756,336 720,246 792,246"/>
+    <circle cx="448" cy="396" r="13"/><circle cx="576" cy="396" r="13"/>
+  </g>
+  <path d="M452 590Q512 640 572 590" fill="none" stroke="#6366f1" stroke-width="22" stroke-linecap="round"/>
 </svg>
