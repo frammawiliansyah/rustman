@@ -14,9 +14,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
+        timeout-minutes: 20
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev
+          # The runner network is sometimes flaky. Retry with short timeouts instead of hanging.
+          for attempt in 1 2 3 4; do
+            if sudo timeout 300 apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update \
+              && sudo timeout 600 apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --fix-missing \
+                libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev; then
+              exit 0
+            fi
+            echo "apt attempt $attempt failed, retrying in 20 seconds"
+            sleep 20
+          done
+          exit 1
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
