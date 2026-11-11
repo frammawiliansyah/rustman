@@ -343,11 +343,6 @@ kbd { font: 11px var(--mono); background: var(--card); border: 1px solid var(--b
 .mcp-token code { flex: 1; min-width: 240px; padding: 7px 11px; font-size: 12.5px; letter-spacing: .02em; overflow-wrap: anywhere; }
 .mcp-list { margin: 0 0 10px; padding-left: 18px; color: var(--muted); display: flex; flex-direction: column; gap: 5px; }
 .mcp-num { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; font-weight: 700; font-size: 12px; color: #fff; background: var(--accent); }
-.mcp-more > summary { cursor: pointer; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 7px; list-style: none; }
-.mcp-more > summary::-webkit-details-marker { display: none; }
-.mcp-more > summary::before { content: "▸"; font-size: 11px; transition: transform .15s; }
-.mcp-more[open] > summary::before { transform: rotate(90deg); }
-.mcp-more[open] > summary { margin-bottom: 10px; }
 .mcp-safety { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 0 4px; color: var(--muted); font-size: 12.5px; }
 .mcp-safety svg { flex: none; margin-top: 2px; color: var(--warn); }
 .mcp-card .hint { font-size: 12px; margin: 8px 0 0; }

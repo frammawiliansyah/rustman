@@ -131,20 +131,18 @@ export function McpPane({ liveAgent }: { liveAgent: string | null }) {
         <ul className="mcp-prompts">
           {PROMPTS.map((p) => <li key={p}><span>{p}</span><CopyButton text={p} /></li>)}
         </ul>
-        <details className="mcp-more">
-          <summary>What can the agent do?</summary>
-          <div className="mcp-tools">
-            {TOOLS.map(([name, desc]) => (
-              <div key={name} className="mcp-tool"><code>{name}</code><span>{desc}</span></div>
-            ))}
-          </div>
-        </details>
+        <h4>What can the agent do?</h4>
+        <div className="mcp-tools">
+          {TOOLS.map(([name, desc]) => (
+            <div key={name} className="mcp-tool"><code>{name}</code><span>{desc}</span></div>
+          ))}
+        </div>
       </section>
 
       <p className="mcp-safety"><ShieldAlert size={14} /> Agents can reach any address this machine can. Only connect agents you trust, and check History for requests with a robot icon.</p>
 
-      <details className="mcp-card mcp-more">
-        <summary><KeyRound size={15} /> Access token (only for your own scripts)</summary>
+      <section className="mcp-card">
+        <h3><KeyRound size={15} /> Access token (only for your own scripts)</h3>
         <p className="mcp-lead">
           <code>rustman mcp</code> reads the token automatically. Use it as <code>Authorization: Bearer &lt;token&gt;</code> in custom integrations.
         </p>
@@ -158,7 +156,7 @@ export function McpPane({ liveAgent }: { liveAgent: string | null }) {
             ? <>Stored in <code>{info.token_file}</code>. Delete it and restart Rustman to create a new one.</>
             : <>Set by the <code>RUSTMAN_TOKEN</code> environment variable.</>}
         </p>
-      </details>
+      </section>
     </div>
   );
 }
