@@ -123,11 +123,15 @@ Each [GitHub release](../../releases) includes:
 
 ### Installing on macOS
 
-The easiest way is the install script. It needs the [GitHub CLI](https://cli.github.com) (`brew install gh && gh auth login`) because the repository is private:
+The easiest way is the install script. It does not need `git` or the GitHub CLI, only `curl`, and nothing from the repository is left on your Mac. Because the repository is private, create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with read-only **Contents** access to this repository, then run:
 
 ```sh
-gh api repos/frammawiliansyah/rustman/contents/scripts/install-macos.sh --jq .content | base64 -d | bash
+export GITHUB_TOKEN=github_pat_xxx
+curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.raw+json" \
+  https://api.github.com/repos/frammawiliansyah/rustman/contents/scripts/install-macos.sh | bash
 ```
+
+Pass a tag to install a specific version, for example `... | bash -s v0.1.0`. To update, run the same command again.
 
 It picks the right build for your Mac (Apple Silicon or Intel) and installs:
 
