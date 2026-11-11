@@ -1,4 +1,4 @@
-import type { KV, Collection, Cookie, SnippetTarget, Environment, ExecuteReply, HistoryEntry, HttpRequest, GqlSchema } from "./types";
+import type { AgentInfo, KV, Collection, Cookie, SnippetTarget, Environment, ExecuteReply, HistoryEntry, HttpRequest, GqlSchema } from "./types";
 
 declare global {
   interface Window { __RUSTMAN_TOKEN__?: string }
@@ -51,5 +51,6 @@ export const api = {
     call<GqlSchema>("/graphql/introspect", json("POST", { url, headers })),
   renderDocs: (collection: Collection, format: "html" | "markdown") =>
     call<{ content: string }>("/docs/render", json("POST", { collection, format })),
+  agentInfo: () => call<AgentInfo>("/agent/info"),
   importOpenapi: (raw: string) => call<Collection>("/import/openapi", { method: "POST", body: raw }),
 };

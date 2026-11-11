@@ -122,6 +122,9 @@ Open **Rustman** from your applications menu (or run `rustman-desktop` in a term
 - A runner that runs a whole collection or folder with one click, including data-driven runs from CSV or JSON files
 - An API documentation viewer that exports a collection as HTML or Markdown
 
+**Connect AI agents**
+- An **AI Agents** tab with setup instructions for your machine, example prompts, the list of tools and your access token, all copyable with one click
+
 **Stays out of your way**
 - Everything is stored locally in `~/.rustman/rustman.db`
 - No sign-in, no telemetry, no background service
@@ -131,6 +134,8 @@ Open **Rustman** from your applications menu (or run `rustman-desktop` in a term
 Rustman includes a [Model Context Protocol](https://modelcontextprotocol.io) server, so an AI agent (Claude Code, Claude Desktop, Cursor and any other MCP client) can test your APIs through the desktop app. **The app moves on its own while the agent works**: the request form fills in, the response appears and a history entry is added for every call, tagged with a robot icon and the agent's name, with the full request config. You see what the agent does, and you can pick up any request and continue by hand.
 
 ### Connect your agent
+
+The quickest way is the **AI Agents** tab in the app: it shows the setup for Claude Code and for Claude Desktop or Cursor with the right path for your machine, example prompts, and your access token. The same steps, by hand:
 
 Claude Code:
 

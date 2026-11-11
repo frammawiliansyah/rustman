@@ -44,6 +44,8 @@ struct AppState {
     jar: Arc<CookieJar>,
     /// Live events for the UI (agent activity, data changes). See `/api/events`.
     events: tokio::sync::broadcast::Sender<serde_json::Value>,
+    /// The access token, so the UI's AI agents page can show it.
+    token: Option<Arc<str>>,
 }
 
 impl AppState {
@@ -304,6 +306,68 @@ async fn run_execute(st: &AppState, body: &ExecuteBody, source: Option<&str>) ->
     Ok(ExecuteReply { response, timing, history_id, test_results, script_error, next_request })
 }
 
+#[derive(Serialize)]
+struct LastAgent {
+    agent: String,
+    at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Serialize)]
+struct AgentInfo {
+    version: &'static str,
+    os: &'static str,
+    token: String,
+    /// `"file"` when the token lives in `token_file`, `"env"` when `RUSTMAN_TOKEN` provides it.
+    token_source: &'static str,
+    token_file: String,
+    /// Command that starts the MCP server: the absolute path of `rustman` when it can be found.
+    command: String,
+    /// Whether `command` was found on this machine, or is just the bare name `rustman`.
+    command_found: bool,
+    last_agent: Option<LastAgent>,
+}
+
+/// Looks for the `rustman` CLI next to the desktop app, on PATH and in the usual install locations.
+fn find_cli() -> Option<PathBuf> {
+    let name = if cfg!(windows) { "rustman.exe" } else { "rustman" };
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(PathBuf::from)) {
+        candidates.push(dir.join(name));
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        candidates.extend(std::env::split_paths(&path).map(|d| d.join(name)));
+    }
+    if let Some(h) = std::env::var_os("HOME").map(PathBuf::from) {
+        candidates.push(h.join(".local/bin").join(name));
+    }
+    if let Some(l) = std::env::var_os("LOCALAPPDATA") {
+        candidates.push(PathBuf::from(l).join("Rustman").join("bin").join(name));
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+/// Everything the "AI Agents" page needs to explain and set up the MCP connection.
+async fn agent_info(State(st): State<AppState>) -> ApiResult<AgentInfo> {
+    let data_dir = rustman_core::storage::token::data_dir();
+    let from_env = std::env::var("RUSTMAN_TOKEN").map(|t| !t.trim().is_empty()).unwrap_or(false);
+    let cli = find_cli();
+    let last_agent = st
+        .storage
+        .list_history(HISTORY_MAX)?
+        .into_iter()
+        .find_map(|h| h.source.and_then(|s| s.strip_prefix("agent:").map(|a| LastAgent { agent: a.to_string(), at: h.created_at })));
+    Ok(Json(AgentInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        os: std::env::consts::OS,
+        token: st.token.as_deref().unwrap_or("").to_string(),
+        token_source: if from_env { "env" } else { "file" },
+        token_file: rustman_core::storage::token::token_path(&data_dir).display().to_string(),
+        command_found: cli.is_some(),
+        command: cli.map(|p| p.display().to_string()).unwrap_or_else(|| "rustman".into()),
+        last_agent,
+    }))
+}
+
 /// Lets an agent show a request in the UI without sending it.
 async fn focus(State(st): State<AppState>, Json(body): Json<FocusBody>) -> StatusCode {
     st.emit(json!({ "type": "focus_request", "request": body.request, "source": body.source }));
@@ -557,11 +621,12 @@ fn build_app(storage: Arc<SqliteStorage>, dist: PathBuf, security: Security) -> 
     }));
     let executor = HttpExecutor::new().with_cookie_jar(jar.clone());
     let (events, _) = tokio::sync::broadcast::channel(256);
-    let state = AppState { storage, executor, jar, events };
+    let state = AppState { storage, executor, jar, events, token: security.token.clone() };
 
     let api = Router::new()
         .route("/execute", post(execute))
         .route("/focus", post(focus))
+        .route("/agent/info", get(agent_info))
         .route("/events", get(events_stream))
         .route("/codegen", post(codegen))
         .route("/docs/render", post(docs_render))
@@ -1122,5 +1187,37 @@ mod tests {
         let h: Vec<serde_json::Value> =
             c.get(format!("{base}/api/history?limit=2")).send().await.unwrap().json().await.unwrap();
         assert_eq!(h.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn agent_info_exposes_setup_details_to_authorized_callers_only() {
+        let base = spawn_secure(PathBuf::from("/nonexistent"), true).await;
+        let c = reqwest::Client::new();
+        assert_eq!(c.get(format!("{base}/api/agent/info")).send().await.unwrap().status(), 401);
+        let v: serde_json::Value =
+            c.get(format!("{base}/api/agent/info")).bearer_auth("s3cret").send().await.unwrap().json().await.unwrap();
+        assert_eq!(v["token"], "s3cret");
+        assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
+        assert!(v["token_file"].as_str().unwrap().ends_with("agent-token"));
+        assert!(!v["command"].as_str().unwrap().is_empty());
+        assert!(v["last_agent"].is_null(), "no agent has connected yet");
+    }
+
+    #[tokio::test]
+    async fn agent_info_reports_the_last_agent() {
+        let base = spawn(PathBuf::from("/nonexistent")).await;
+        let c = reqwest::Client::new();
+        let req = HttpRequest::new("a", rustman_core::HttpMethod::GET, format!("{base}/api/collections"));
+        c.post(format!("{base}/api/execute")).json(&json!({ "request": req })).send().await.unwrap();
+        let v: serde_json::Value = c.get(format!("{base}/api/agent/info")).send().await.unwrap().json().await.unwrap();
+        assert!(v["last_agent"].is_null(), "requests from the UI do not count");
+        c.post(format!("{base}/api/execute"))
+            .json(&json!({ "request": req, "source": { "agent": "Claude Code" } }))
+            .send()
+            .await
+            .unwrap();
+        let v: serde_json::Value = c.get(format!("{base}/api/agent/info")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(v["last_agent"]["agent"], "Claude Code");
+        assert!(v["last_agent"]["at"].is_string());
     }
 }

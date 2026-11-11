@@ -4,6 +4,7 @@ import { api, withToken } from "./api";
 import { CodeModal } from "./CodeModal";
 import { CookieManager } from "./CookieManager";
 import { GraphqlPane } from "./GraphqlPane";
+import { McpPane } from "./McpPane";
 import { RealtimePane } from "./RealtimePane";
 import { EnvEditor } from "./EnvEditor";
 import { RequestPane } from "./RequestPane";
@@ -29,7 +30,7 @@ export default function App() {
   const [showEnv, setShowEnv] = useState(false);
   const [showCode, setShowCode] = useState(false);
   const [showCookies, setShowCookies] = useState(false);
-  const [mode, setMode] = useState<"http" | "ws" | "sse" | "graphql">("http");
+  const [mode, setMode] = useState<"http" | "ws" | "sse" | "graphql" | "mcp">("http");
   /** Name of the AI agent currently driving the UI, shown as a banner. */
   const [agent, setAgent] = useState<string | null>(null);
 
@@ -109,6 +110,7 @@ export default function App() {
           <Tabs variant="pill" value={mode} onChange={setMode} items={[
             { key: "http", label: "HTTP", icon: Globe }, { key: "ws", label: "WebSocket", icon: Radio },
             { key: "sse", label: "SSE", icon: Zap }, { key: "graphql", label: "GraphQL", icon: Terminal },
+            { key: "mcp", label: "AI Agents", icon: Bot },
           ]} />
           {agent && <span className="agent-badge" title="An AI agent is controlling Rustman"><Bot size={14} />{agent} is working</span>}
           {mode === "http" && <>
@@ -120,7 +122,9 @@ export default function App() {
           <RequestPane req={req} onChange={setReq} onSend={send} sending={sending}
             onCode={() => setShowCode(true)} onCookies={() => setShowCookies(true)} />
           <ResponsePane reply={reply} error={error} loading={sending} />
-        </>) : mode === "graphql" ? <GraphqlPane envId={envId} /> : <RealtimePane key={mode} kind={mode} />}
+        </>) : mode === "graphql" ? <GraphqlPane envId={envId} />
+          : mode === "mcp" ? <McpPane liveAgent={agent} />
+          : <RealtimePane key={mode} kind={mode} />}
       </main>
       {showCode && <CodeModal req={req} onClose={() => setShowCode(false)} />}
       {showCookies && <CookieManager onClose={() => setShowCookies(false)} />}

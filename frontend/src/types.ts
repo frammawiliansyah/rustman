@@ -98,3 +98,15 @@ export type BackendEvent =
   | { type: "request_failed"; run_id: string; source: AgentSource; error: string }
   | { type: "focus_request"; request: HttpRequest; source?: AgentSource | null }
   | { type: "data_changed"; kind: "collections" | "environments" | "history" | "cookies" };
+
+/** Setup details for the AI Agents page, from /api/agent/info. */
+export interface AgentInfo {
+  version: string;
+  os: string;
+  token: string;
+  token_source: "file" | "env";
+  token_file: string;
+  command: string;
+  command_found: boolean;
+  last_agent: { agent: string; at: string } | null;
+}

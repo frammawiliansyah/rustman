@@ -3353,6 +3353,7 @@ name = "rustman-desktop"
 version = "0.3.0"
 dependencies = [
  "axum",
+ "chrono",
  "clap",
  "futures-util",
  "png",
