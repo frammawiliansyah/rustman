@@ -33,19 +33,35 @@ fn fake_releases(latest: &'static str, installer: &'static str) -> String {
     format!("http://{addr}")
 }
 
+/// Runs a command, retrying while the kernel reports "text file busy".
+///
+/// The tests copy the binary and execute the copy right away. On Linux, if another test thread
+/// forks while the copy is still open for writing, `exec` fails with ETXTBSY until it closes.
+fn output_retrying(cmd: &mut Command) -> Output {
+    for _ in 0..50 {
+        match cmd.output() {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                std::thread::sleep(std::time::Duration::from_millis(100))
+            }
+            other => return other.unwrap(),
+        }
+    }
+    panic!("binary stayed busy");
+}
+
 /// Runs a private copy of the binary so an update can never touch the real build output.
 fn rustman(dir: &std::path::Path, base: &str, args: &[&str]) -> Output {
     let exe: PathBuf = dir.join("rustman");
     if !exe.exists() {
         std::fs::copy(env!("CARGO_BIN_EXE_rustman"), &exe).unwrap();
     }
-    Command::new(exe)
-        .args(args)
-        .env("RUSTMAN_RELEASES_URL", format!("{base}/releases/latest"))
-        .env("RUSTMAN_DOWNLOAD_URL", format!("{base}/download"))
-        .env("RUSTMAN_UPDATE_SKIP_RUNNING_CHECK", "1")
-        .output()
-        .unwrap()
+    output_retrying(
+        Command::new(exe)
+            .args(args)
+            .env("RUSTMAN_RELEASES_URL", format!("{base}/releases/latest"))
+            .env("RUSTMAN_DOWNLOAD_URL", format!("{base}/download"))
+            .env("RUSTMAN_UPDATE_SKIP_RUNNING_CHECK", "1"),
+    )
 }
 
 fn tmp() -> PathBuf {
@@ -106,12 +122,12 @@ fn missing_release_is_reported() {
     let exe = d.join("rustman");
     std::fs::copy(env!("CARGO_BIN_EXE_rustman"), &exe).unwrap();
     // The fake server only serves installers under /download, so this path answers 404.
-    let o = Command::new(exe)
-        .args(["update", "--to", "v1.2.3"])
-        .env("RUSTMAN_DOWNLOAD_URL", format!("{base}/nowhere"))
-        .env("RUSTMAN_UPDATE_SKIP_RUNNING_CHECK", "1")
-        .output()
-        .unwrap();
+    let o = output_retrying(
+        Command::new(exe)
+            .args(["update", "--to", "v1.2.3"])
+            .env("RUSTMAN_DOWNLOAD_URL", format!("{base}/nowhere"))
+            .env("RUSTMAN_UPDATE_SKIP_RUNNING_CHECK", "1"),
+    );
     assert!(!o.status.success());
     assert!(text(&o).contains("could not download the installer for v1.2.3"), "{}", text(&o));
 }
