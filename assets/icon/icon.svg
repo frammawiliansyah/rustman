@@ -12,6 +12,10 @@
     <path d="M358 352C318 352 332 468 296 512C332 556 318 672 358 672"/>
     <path d="M666 352C706 352 692 468 728 512C692 556 706 672 666 672"/>
   </g>
-  <!-- Lightning bolt: speed -->
-  <polygon points="560,324 450,534 520,534 466,700 600,486 534,486" fill="#ffffff" stroke="#ffffff" stroke-width="22" stroke-linejoin="round"/>
+  <!-- Three dots between the braces: the payload -->
+  <g fill="#ffffff">
+    <circle cx="436" cy="512" r="26"/>
+    <circle cx="512" cy="512" r="26"/>
+    <circle cx="588" cy="512" r="26"/>
+  </g>
 </svg>
