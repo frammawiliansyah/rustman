@@ -9,7 +9,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::ws::{Message as AxMessage, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, Query, Request, State};
+use axum::middleware::{self, Next};
 use axum::http::HeaderMap;
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -24,11 +25,12 @@ use rustman_core::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower_http::cors::{AllowOrigin, CorsLayer};
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeDir;
 use uuid::Uuid;
 
 const DEFAULT_PORT: u16 = 51730;
 const HISTORY_LIMIT: usize = 50;
+const HISTORY_MAX: usize = 500;
 
 const PLACEHOLDER: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>rustman</title></head>\
 <body style=\"font-family:sans-serif;padding:2rem\"><h1>rustman backend is running</h1>\
@@ -40,6 +42,76 @@ struct AppState {
     storage: Arc<SqliteStorage>,
     executor: HttpExecutor,
     jar: Arc<CookieJar>,
+    /// Live events for the UI (agent activity, data changes). See `/api/events`.
+    events: tokio::sync::broadcast::Sender<serde_json::Value>,
+}
+
+impl AppState {
+    fn emit(&self, event: serde_json::Value) {
+        // No subscribers is fine: nobody is watching.
+        let _ = self.events.send(event);
+    }
+
+    fn changed(&self, kind: &str) {
+        self.emit(json!({ "type": "data_changed", "kind": kind }));
+    }
+}
+
+/// Access control for the local backend.
+#[derive(Clone)]
+struct Security {
+    /// Required on every `/api` call as `Authorization: Bearer <token>` or `?token=<token>`.
+    /// `None` disables the check and is only meant for tests.
+    token: Option<Arc<str>>,
+    /// When the server listens on loopback only, reject requests whose `Host` is not
+    /// loopback. This blocks DNS rebinding, where a web page tricks the browser into
+    /// talking to the local server under its own domain name.
+    loopback_only: bool,
+}
+
+impl Security {
+    #[cfg(test)]
+    fn disabled() -> Self {
+        Self { token: None, loopback_only: false }
+    }
+}
+
+fn ct_eq(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+fn host_is_loopback(headers: &HeaderMap) -> bool {
+    let Some(h) = headers.get(header::HOST).and_then(|h| h.to_str().ok()) else { return true };
+    let host = if let Some(rest) = h.strip_prefix('[') {
+        rest.split(']').next().unwrap_or("")
+    } else {
+        h.split(':').next().unwrap_or("")
+    };
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
+}
+
+fn request_token(req: &Request) -> Option<String> {
+    if let Some(v) = req.headers().get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) {
+        if let Some(t) = v.strip_prefix("Bearer ") {
+            return Some(t.trim().to_string());
+        }
+    }
+    req.uri().query()?.split('&').find_map(|kv| kv.strip_prefix("token=")).map(str::to_string)
+}
+
+async fn guard(State(sec): State<Security>, req: Request, next: Next) -> Response {
+    if sec.loopback_only && !host_is_loopback(req.headers()) {
+        return ApiError(StatusCode::FORBIDDEN, "host not allowed".into()).into_response();
+    }
+    if let Some(expected) = &sec.token {
+        if req.uri().path().starts_with("/api") {
+            let ok = request_token(&req).map(|t| ct_eq(&t, expected)).unwrap_or(false);
+            if !ok {
+                return ApiError(StatusCode::UNAUTHORIZED, "missing or invalid access token".into()).into_response();
+            }
+        }
+    }
+    next.run(req).await
 }
 
 // ---------- errors ----------
@@ -76,6 +148,36 @@ struct ExecuteBody {
     request: HttpRequest,
     #[serde(default)]
     environment_id: Option<Uuid>,
+    /// Set by AI agents (through `rustman mcp`). The UI then follows along live, and the
+    /// history entry is tagged with the agent.
+    #[serde(default)]
+    source: Option<SourceInfo>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+struct SourceInfo {
+    agent: String,
+    #[serde(default)]
+    session: Option<String>,
+}
+
+impl SourceInfo {
+    fn label(&self) -> String {
+        format!("agent:{}", self.agent)
+    }
+}
+
+#[derive(Deserialize)]
+struct FocusBody {
+    request: HttpRequest,
+    #[serde(default)]
+    source: Option<SourceInfo>,
+}
+
+#[derive(Deserialize)]
+struct HistoryQuery {
+    #[serde(default)]
+    limit: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -149,6 +251,24 @@ async fn codegen(Json(body): Json<CodegenBody>) -> Json<CodegenReply> {
 }
 
 async fn execute(State(st): State<AppState>, Json(body): Json<ExecuteBody>) -> ApiResult<ExecuteReply> {
+    let Some(src) = body.source.clone() else {
+        return run_execute(&st, &body, None).await.map(Json);
+    };
+    let run_id = Uuid::new_v4();
+    st.emit(json!({
+        "type": "request_started", "run_id": run_id, "source": src,
+        "request": body.request, "environment_id": body.environment_id,
+    }));
+    let result = run_execute(&st, &body, Some(&src.label())).await;
+    match &result {
+        Ok(reply) => st.emit(json!({ "type": "request_finished", "run_id": run_id, "source": src, "reply": reply })),
+        Err(e) => st.emit(json!({ "type": "request_failed", "run_id": run_id, "source": src, "error": e.1 })),
+    }
+    st.changed("history");
+    result.map(Json)
+}
+
+async fn run_execute(st: &AppState, body: &ExecuteBody, source: Option<&str>) -> Result<ExecuteReply, ApiError> {
     let mut resolver = VariableResolver::new();
     if let Some(id) = body.environment_id {
         let env = st
@@ -159,9 +279,9 @@ async fn execute(State(st): State<AppState>, Json(body): Json<ExecuteBody>) -> A
     }
     let resolved = resolver.resolve_request(&body.request);
     let (response, timing) = st.executor.execute(&resolved).await?;
-    persist_cookies(&st);
+    persist_cookies(st);
     // A history write failure must not hide a successful response.
-    let history_id = match st.storage.save_history(&resolved, &response) {
+    let history_id = match st.storage.save_history_with_source(&resolved, &response, source) {
         Ok(id) => Some(id),
         Err(e) => {
             tracing::warn!("failed to save history: {e}");
@@ -181,7 +301,31 @@ async fn execute(State(st): State<AppState>, Json(body): Json<ExecuteBody>) -> A
             Err(e) => script_error = Some(e.to_string()),
         }
     }
-    Ok(Json(ExecuteReply { response, timing, history_id, test_results, script_error, next_request }))
+    Ok(ExecuteReply { response, timing, history_id, test_results, script_error, next_request })
+}
+
+/// Lets an agent show a request in the UI without sending it.
+async fn focus(State(st): State<AppState>, Json(body): Json<FocusBody>) -> StatusCode {
+    st.emit(json!({ "type": "focus_request", "request": body.request, "source": body.source }));
+    StatusCode::NO_CONTENT
+}
+
+/// Server-sent events for the UI: agent activity and data changes.
+async fn events_stream(
+    State(st): State<AppState>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    use tokio::sync::broadcast::error::RecvError;
+    let rx = st.events.subscribe();
+    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(v) => return Some((Ok(Event::default().data(v.to_string())), rx)),
+                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Closed) => return None,
+            }
+        }
+    });
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 fn persist_cookies(st: &AppState) {
@@ -206,12 +350,14 @@ async fn upsert_cookie(State(st): State<AppState>, Json(c): Json<Cookie>) -> Res
     }
     st.jar.add_cookie(c.clone());
     persist_cookies(&st);
+    st.changed("cookies");
     Ok(Json(c))
 }
 
 async fn delete_cookie(State(st): State<AppState>, Query(q): Query<CookieQuery>) -> Result<StatusCode, ApiError> {
     if st.jar.delete_cookie(&q.domain, &q.name) {
         persist_cookies(&st);
+        st.changed("cookies");
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError(StatusCode::NOT_FOUND, format!("cookie {} for {} not found", q.name, q.domain)))
@@ -224,11 +370,13 @@ async fn list_collections(State(st): State<AppState>) -> ApiResult<Vec<Collectio
 
 async fn save_collection(State(st): State<AppState>, Json(c): Json<Collection>) -> ApiResult<Collection> {
     st.storage.save_collection(&c)?;
+    st.changed("collections");
     Ok(Json(c))
 }
 
 async fn delete_collection(State(st): State<AppState>, Path(id): Path<Uuid>) -> Result<StatusCode, ApiError> {
     if st.storage.delete_collection(&id)? {
+        st.changed("collections");
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError(StatusCode::NOT_FOUND, format!("collection {id} not found")))
@@ -241,30 +389,35 @@ async fn list_environments(State(st): State<AppState>) -> ApiResult<Vec<Environm
 
 async fn save_environment(State(st): State<AppState>, Json(e): Json<Environment>) -> ApiResult<Environment> {
     st.storage.save_environment(&e)?;
+    st.changed("environments");
     Ok(Json(e))
 }
 
 async fn delete_environment(State(st): State<AppState>, Path(id): Path<Uuid>) -> Result<StatusCode, ApiError> {
     if st.storage.delete_environment(&id)? {
+        st.changed("environments");
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError(StatusCode::NOT_FOUND, format!("environment {id} not found")))
     }
 }
 
-async fn list_history(State(st): State<AppState>) -> ApiResult<Vec<HistoryEntry>> {
-    Ok(Json(st.storage.list_history(HISTORY_LIMIT)?))
+async fn list_history(State(st): State<AppState>, Query(q): Query<HistoryQuery>) -> ApiResult<Vec<HistoryEntry>> {
+    let limit = q.limit.unwrap_or(HISTORY_LIMIT).min(HISTORY_MAX);
+    Ok(Json(st.storage.list_history(limit)?))
 }
 
 async fn import_postman_handler(State(st): State<AppState>, raw: String) -> ApiResult<Collection> {
     let c = import_postman(&raw).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
     st.storage.save_collection(&c)?;
+    st.changed("collections");
     Ok(Json(c))
 }
 
 async fn import_openapi_handler(State(st): State<AppState>, raw: String) -> ApiResult<Collection> {
     let c = import_openapi(&raw).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
     st.storage.save_collection(&c)?;
+    st.changed("collections");
     Ok(Json(c))
 }
 
@@ -376,16 +529,40 @@ async fn sse_connect(
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
-fn build_app(storage: Arc<SqliteStorage>, dist: PathBuf) -> Router {
+/// Serves `index.html` with the access token embedded, so only whoever can load the page
+/// from this host (the desktop window, or a browser on this machine) gets the token.
+async fn index_page(State((index, token)): State<(PathBuf, Option<Arc<str>>)>) -> Response {
+    let Ok(html) = tokio::fs::read_to_string(&index).await else {
+        return (StatusCode::NOT_FOUND, "index.html not found").into_response();
+    };
+    let html = match token {
+        Some(t) => {
+            let script = format!("<script>window.__RUSTMAN_TOKEN__=\"{t}\";</script>");
+            match html.find("</head>") {
+                Some(i) => format!("{}{}{}", &html[..i], script, &html[i..]),
+                None => format!("{script}{html}"),
+            }
+        }
+        None => html,
+    };
+    let mut res = Html(html).into_response();
+    res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    res
+}
+
+fn build_app(storage: Arc<SqliteStorage>, dist: PathBuf, security: Security) -> Router {
     let jar = Arc::new(storage.load_cookie_jar().unwrap_or_else(|e| {
         tracing::warn!("failed to load cookies: {e}");
         CookieJar::new()
     }));
     let executor = HttpExecutor::new().with_cookie_jar(jar.clone());
-    let state = AppState { storage, executor, jar };
+    let (events, _) = tokio::sync::broadcast::channel(256);
+    let state = AppState { storage, executor, jar, events };
 
     let api = Router::new()
         .route("/execute", post(execute))
+        .route("/focus", post(focus))
+        .route("/events", get(events_stream))
         .route("/codegen", post(codegen))
         .route("/docs/render", post(docs_render))
         .route("/graphql/introspect", post(graphql_introspect))
@@ -405,17 +582,19 @@ fn build_app(storage: Arc<SqliteStorage>, dist: PathBuf) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(|o, _| is_local_origin(o)))
         .allow_methods(tower_http::cors::Any)
-        .allow_headers([header::CONTENT_TYPE]);
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
     let app = Router::new().nest("/api", api);
     let app = if dist.join("index.html").is_file() {
-        let index = dist.join("index.html");
-        app.fallback_service(ServeDir::new(&dist).fallback(ServeFile::new(index)))
+        let index = Router::new()
+            .fallback(index_page)
+            .with_state((dist.join("index.html"), security.token.clone()));
+        app.fallback_service(ServeDir::new(&dist).append_index_html_on_directories(false).fallback(index))
     } else {
         tracing::warn!("{} not found; serving placeholder page", dist.display());
         app.fallback(placeholder)
     };
-    app.layer(cors)
+    app.layer(middleware::from_fn_with_state(security, guard)).layer(cors)
 }
 
 fn db_path() -> PathBuf {
@@ -492,7 +671,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Bind before opening the window so the webview never races the server.
     let listener = rt.block_on(tokio::net::TcpListener::bind((host.as_str(), port)))?;
     tracing::info!("rustman db: {}", path.display());
-    let app = build_app(storage, dist);
+    let data_dir = rustman_core::storage::token::data_dir();
+    let token = rustman_core::storage::token::load_or_create_token(&data_dir)?;
+    let loopback_only = matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1");
+    let security = Security { token: Some(token.into()), loopback_only };
+    let app = build_app(storage, dist, security);
 
     if cli.headless || !has_display() {
         println!("Rustman desktop backend running in headless mode at http://{host}:{port}");
@@ -549,7 +732,7 @@ mod tests {
         let storage = Arc::new(SqliteStorage::new_in_memory().unwrap());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, build_app(storage, dist)).await.unwrap() });
+        tokio::spawn(async move { axum::serve(listener, build_app(storage, dist, Security::disabled())).await.unwrap() });
         format!("http://{addr}")
     }
 
@@ -767,5 +950,160 @@ mod tests {
         let mut req = format!("{ws_base}/api/ws/connect?target=ws://{up_addr}").into_client_request().unwrap();
         req.headers_mut().insert("origin", "http://evil.example".parse().unwrap());
         assert!(tokio_tungstenite::connect_async(req).await.is_err());
+    }
+
+    async fn spawn_secure(dist: PathBuf, loopback_only: bool) -> String {
+        let storage = Arc::new(SqliteStorage::new_in_memory().unwrap());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let security = Security { token: Some("s3cret".into()), loopback_only };
+        tokio::spawn(async move { axum::serve(listener, build_app(storage, dist, security)).await.unwrap() });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn api_requires_token() {
+        let base = spawn_secure(PathBuf::from("/nonexistent"), true).await;
+        let c = reqwest::Client::new();
+        let url = format!("{base}/api/collections");
+        assert_eq!(c.get(&url).send().await.unwrap().status(), 401);
+        assert_eq!(c.get(&url).bearer_auth("wrong").send().await.unwrap().status(), 401);
+        assert_eq!(c.get(&url).bearer_auth("s3cret").send().await.unwrap().status(), 200);
+        assert_eq!(c.get(format!("{url}?token=s3cret")).send().await.unwrap().status(), 200);
+        assert_eq!(c.get(format!("{url}?token=s3cre")).send().await.unwrap().status(), 401);
+        // The other routes are protected too.
+        let r = c.post(format!("{base}/api/execute")).json(&json!({})).send().await.unwrap();
+        assert_eq!(r.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn rejects_foreign_host_header() {
+        let base = spawn_secure(PathBuf::from("/nonexistent"), true).await;
+        let c = reqwest::Client::new();
+        let r = c.get(format!("{base}/")).header("Host", "evil.example").send().await.unwrap();
+        assert_eq!(r.status(), 403);
+        let r = c.get(format!("{base}/")).header("Host", "localhost:51730").send().await.unwrap();
+        assert_eq!(r.status(), 200);
+        // Not enforced when the user chose to listen on a non-loopback address.
+        let open = spawn_secure(PathBuf::from("/nonexistent"), false).await;
+        let r = c.get(format!("{open}/")).header("Host", "my-laptop.lan").send().await.unwrap();
+        assert_eq!(r.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn index_embeds_token() {
+        let dir = std::env::temp_dir().join(format!("rustman-dist-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        std::fs::write(dir.join("index.html"), "<html><head><title>t</title></head><body>hi</body></html>").unwrap();
+        std::fs::write(dir.join("assets/app.js"), "console.log(1)").unwrap();
+        let base = spawn_secure(dir.clone(), true).await;
+        for path in ["/", "/some/spa/route"] {
+            let body = reqwest::get(format!("{base}{path}")).await.unwrap().text().await.unwrap();
+            assert!(body.contains("window.__RUSTMAN_TOKEN__=\"s3cret\""), "{path}: {body}");
+            assert!(body.contains("</script></head>"));
+        }
+        let js = reqwest::get(format!("{base}/assets/app.js")).await.unwrap().text().await.unwrap();
+        assert_eq!(js, "console.log(1)");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn agent_requests_emit_events_and_tag_history() {
+        let base = spawn(PathBuf::from("/nonexistent")).await;
+        let c = reqwest::Client::new();
+
+        let mut stream = c.get(format!("{base}/api/events")).send().await.unwrap();
+        assert!(stream.status().is_success());
+
+        let req = HttpRequest::new("agent call", rustman_core::HttpMethod::GET, format!("{base}/api/collections"));
+        let r = c
+            .post(format!("{base}/api/execute"))
+            .json(&json!({ "request": req, "source": { "agent": "claude", "session": "s1" } }))
+            .send()
+            .await
+            .unwrap();
+        assert!(r.status().is_success());
+
+        let mut seen = String::new();
+        while !(seen.contains("request_finished") && seen.contains("\"history\"")) {
+            let chunk = tokio::time::timeout(std::time::Duration::from_secs(5), stream.chunk())
+                .await
+                .expect("timed out waiting for events")
+                .unwrap()
+                .expect("stream ended");
+            seen.push_str(&String::from_utf8_lossy(&chunk));
+        }
+        assert!(seen.contains("request_started"));
+        assert!(seen.contains("agent call"), "started event carries the request config");
+        assert!(seen.find("request_started").unwrap() < seen.find("request_finished").unwrap());
+
+        let h: Vec<serde_json::Value> =
+            c.get(format!("{base}/api/history")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(h[0]["source"], "agent:claude");
+    }
+
+    #[tokio::test]
+    async fn ui_requests_are_not_tagged_and_failed_agent_requests_emit_failure() {
+        let base = spawn(PathBuf::from("/nonexistent")).await;
+        let c = reqwest::Client::new();
+        let ok = HttpRequest::new("ui", rustman_core::HttpMethod::GET, format!("{base}/api/collections"));
+        c.post(format!("{base}/api/execute")).json(&json!({ "request": ok })).send().await.unwrap();
+        let h: Vec<serde_json::Value> =
+            c.get(format!("{base}/api/history")).send().await.unwrap().json().await.unwrap();
+        assert!(h[0]["source"].is_null());
+
+        let mut stream = c.get(format!("{base}/api/events")).send().await.unwrap();
+        let bad = HttpRequest::new("bad", rustman_core::HttpMethod::GET, "http://127.0.0.1:1/");
+        let r = c
+            .post(format!("{base}/api/execute"))
+            .json(&json!({ "request": bad, "source": { "agent": "claude" } }))
+            .send()
+            .await
+            .unwrap();
+        assert!(r.status().is_server_error());
+        let mut seen = String::new();
+        while !seen.contains("request_failed") {
+            let chunk = tokio::time::timeout(std::time::Duration::from_secs(5), stream.chunk())
+                .await
+                .expect("timed out")
+                .unwrap()
+                .expect("stream ended");
+            seen.push_str(&String::from_utf8_lossy(&chunk));
+        }
+    }
+
+    #[tokio::test]
+    async fn mutations_emit_data_changed_and_focus_is_broadcast() {
+        let base = spawn(PathBuf::from("/nonexistent")).await;
+        let c = reqwest::Client::new();
+        let mut stream = c.get(format!("{base}/api/events")).send().await.unwrap();
+        let col = Collection { id: Uuid::new_v4(), name: "C".into(), description: None, items: vec![] };
+        c.post(format!("{base}/api/collections")).json(&col).send().await.unwrap();
+        let req = HttpRequest::new("look at me", rustman_core::HttpMethod::GET, "https://example.com");
+        let r = c.post(format!("{base}/api/focus")).json(&json!({ "request": req })).send().await.unwrap();
+        assert_eq!(r.status(), 204);
+        let mut seen = String::new();
+        while !(seen.contains("collections") && seen.contains("focus_request")) {
+            let chunk = tokio::time::timeout(std::time::Duration::from_secs(5), stream.chunk())
+                .await
+                .expect("timed out")
+                .unwrap()
+                .expect("stream ended");
+            seen.push_str(&String::from_utf8_lossy(&chunk));
+        }
+        assert!(seen.contains("look at me"));
+    }
+
+    #[tokio::test]
+    async fn history_limit_param_is_capped() {
+        let base = spawn(PathBuf::from("/nonexistent")).await;
+        let c = reqwest::Client::new();
+        for i in 0..3 {
+            let r = HttpRequest::new(format!("r{i}"), rustman_core::HttpMethod::GET, format!("{base}/api/collections"));
+            c.post(format!("{base}/api/execute")).json(&json!({ "request": r })).send().await.unwrap();
+        }
+        let h: Vec<serde_json::Value> =
+            c.get(format!("{base}/api/history?limit=2")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(h.len(), 2);
     }
 }

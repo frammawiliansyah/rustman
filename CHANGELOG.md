@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-11
+
+### Added
+
+- `rustman mcp`: a Model Context Protocol server so AI agents can drive the desktop app. Tools: `send_request`, `open_request`, `run_collection`, `list_collections`, `get_collection`, `save_request`, `list_environments`, `set_environment_variable`, `list_history`, `get_history_entry`, `import_collection` and `generate_snippet`, plus resources for collections, environments and history
+- The desktop app follows agent activity live: the request form fills in, the response and test results appear, and collections, environments and history refresh
+- History entries record who sent them. Agent requests show a robot icon, and the full request config is stored
+- Live event stream at `/api/events` and a `source` field on `/api/execute`
+- `rustman mcp` starts the desktop app automatically when it is not running
+
+### Security
+
+- Every `/api` call now requires an access token, stored in `~/.rustman/agent-token` with owner-only permissions (override with `RUSTMAN_TOKEN`)
+- The backend refuses requests with a non-loopback `Host` header when it listens on loopback only, which blocks DNS rebinding
+
+### Changed
+
+- The history API accepts `?limit=` (default 50, maximum 500)
+- The frontend dev server proxy adds the access token automatically
+
 ## [0.1.1] - 2026-11-11
 
 ### Added
@@ -49,6 +69,7 @@ Initial release.
 - CLI reporters: `cli`, `json` and `htmlextra`
 - Desktop app with a local Axum backend, a React frontend and a native Tao and Wry window
 
-[Unreleased]: https://github.com/frammawiliansyah/rustman/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/frammawiliansyah/rustman/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/frammawiliansyah/rustman/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/frammawiliansyah/rustman/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/frammawiliansyah/rustman/releases/tag/v0.1.0

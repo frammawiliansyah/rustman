@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
-import { Globe, Plus, Radio, Terminal, Zap } from "lucide-react";
-import { api } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Bot, Globe, Plus, Radio, Terminal, Zap } from "lucide-react";
+import { api, withToken } from "./api";
 import { CodeModal } from "./CodeModal";
 import { CookieManager } from "./CookieManager";
 import { GraphqlPane } from "./GraphqlPane";
@@ -10,7 +10,7 @@ import { RequestPane } from "./RequestPane";
 import { ResponsePane } from "./ResponsePane";
 import { Sidebar } from "./Sidebar";
 import { Tabs } from "./ui";
-import type { Collection, Environment, ExecuteReply, HistoryEntry, HttpRequest } from "./types";
+import type { BackendEvent, Collection, Environment, ExecuteReply, HistoryEntry, HttpRequest } from "./types";
 
 const blank = (): HttpRequest => ({
   id: crypto.randomUUID(), name: "Untitled request", method: "GET", url: "",
@@ -30,6 +30,8 @@ export default function App() {
   const [showCode, setShowCode] = useState(false);
   const [showCookies, setShowCookies] = useState(false);
   const [mode, setMode] = useState<"http" | "ws" | "sse" | "graphql">("http");
+  /** Name of the AI agent currently driving the UI, shown as a banner. */
+  const [agent, setAgent] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -42,6 +44,43 @@ export default function App() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Follow along while an AI agent works through `rustman mcp`. Events are handled one at
+  // a time with short pauses, so a fast burst of requests stays readable.
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  useEffect(() => {
+    const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    let hideTimer: ReturnType<typeof setTimeout> | undefined;
+    const handle = async (ev: BackendEvent) => {
+      if (ev.type === "data_changed") { refresh(); return; }
+      if (ev.type === "focus_request") {
+        setMode("http"); setReq(ev.request); setReply(null); setError(null);
+        if (ev.source) setAgent(ev.source.agent);
+        await pause(500);
+        return;
+      }
+      setAgent(ev.source.agent);
+      clearTimeout(hideTimer);
+      if (ev.type === "request_started") {
+        setMode("http"); setReq(ev.request); setReply(null); setError(null); setSending(true);
+        await pause(700);
+      } else if (ev.type === "request_finished") {
+        setReply(ev.reply); setError(null); setSending(false);
+        await pause(900);
+      } else {
+        setReply(null); setError(ev.error); setSending(false);
+        await pause(900);
+      }
+      hideTimer = setTimeout(() => setAgent(null), 4000);
+    };
+    const es = new EventSource(withToken("/api/events"));
+    es.onmessage = (m) => {
+      let ev: BackendEvent;
+      try { ev = JSON.parse(m.data) as BackendEvent; } catch { return; }
+      queue.current = queue.current.then(() => handle(ev)).catch(() => {});
+    };
+    return () => { es.close(); clearTimeout(hideTimer); };
+  }, [refresh]);
 
   const send = async () => {
     setSending(true); setError(null);
@@ -71,6 +110,7 @@ export default function App() {
             { key: "http", label: "HTTP", icon: Globe }, { key: "ws", label: "WebSocket", icon: Radio },
             { key: "sse", label: "SSE", icon: Zap }, { key: "graphql", label: "GraphQL", icon: Terminal },
           ]} />
+          {agent && <span className="agent-badge" title="An AI agent is controlling Rustman"><Bot size={14} />{agent} is working</span>}
           {mode === "http" && <>
           <input className="req-name" value={req.name} onChange={(e) => setReq({ ...req, name: e.target.value })} />
           <button className="btn ghost sm" onClick={() => open(blank())}><Plus size={14} />New request</button>

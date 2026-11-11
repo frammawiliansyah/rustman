@@ -68,6 +68,8 @@ export interface HistoryEntry {
   request: HttpRequest;
   response: HttpResponse;
   created_at: string;
+  /** Who sent it, for example `agent:claude`. Absent for requests sent from this UI. */
+  source?: string | null;
 }
 
 export type SnippetTarget = "curl" | "javascript" | "python" | "go" | "rust";
@@ -87,3 +89,12 @@ export interface GqlSchema {
   queryType?: { name: string } | null; mutationType?: { name: string } | null;
   types: GqlType[]; queries: GqlField[]; mutations: GqlField[];
 }
+
+/** Live events pushed by the backend on /api/events. */
+export interface AgentSource { agent: string; session?: string | null }
+export type BackendEvent =
+  | { type: "request_started"; run_id: string; source: AgentSource; request: HttpRequest; environment_id?: string | null }
+  | { type: "request_finished"; run_id: string; source: AgentSource; reply: ExecuteReply }
+  | { type: "request_failed"; run_id: string; source: AgentSource; error: string }
+  | { type: "focus_request"; request: HttpRequest; source?: AgentSource | null }
+  | { type: "data_changed"; kind: "collections" | "environments" | "history" | "cookies" };

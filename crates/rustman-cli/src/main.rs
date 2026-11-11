@@ -1,4 +1,5 @@
 mod load;
+mod mcp;
 mod reporter;
 mod runner;
 
@@ -85,6 +86,18 @@ enum Command {
         /// Output format
         #[arg(short, long, value_enum, default_value_t = DocFormat::Html)]
         format: DocFormat,
+    },
+    /// Run an MCP server on stdio so AI agents can drive the Rustman desktop app
+    Mcp {
+        /// Address the Rustman desktop backend listens on
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Port of the Rustman desktop backend (default: RUSTMAN_PORT or 51730)
+        #[arg(short, long)]
+        port: Option<u16>,
+        /// Do not start the desktop app when it is not running
+        #[arg(long)]
+        no_launch: bool,
     },
     /// Send a one-shot request
     Request {
@@ -211,6 +224,13 @@ async fn real_main() -> Result<i32> {
                     .map_err(|e| anyhow!("cannot write {}: {e}", p.display()))?,
                 None => print!("{text}"),
             }
+            Ok(0)
+        }
+        Command::Mcp { host, port, no_launch } => {
+            let port = port
+                .or_else(|| std::env::var("RUSTMAN_PORT").ok().and_then(|p| p.parse().ok()))
+                .unwrap_or(51730);
+            mcp::serve(mcp::McpOptions { host, port, no_launch }).await?;
             Ok(0)
         }
         Command::Request { method, url, headers, data } => {

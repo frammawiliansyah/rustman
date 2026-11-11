@@ -26,6 +26,9 @@ pub struct HistoryEntry {
     pub request: HttpRequest,
     pub response: HttpResponse,
     pub created_at: DateTime<Utc>,
+    /// Who issued the request, for example `agent:claude`. `None` for requests sent from the UI.
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 /// SQLite-backed storage for collections, environments and request history.
@@ -84,6 +87,13 @@ fn parse_time(s: &str) -> Result<DateTime<Utc>, RustmanError> {
 impl SqliteStorage {
     fn from_connection(conn: Connection) -> Result<Self, RustmanError> {
         conn.execute_batch(SCHEMA)?;
+        // Databases created before the `source` column existed need it added.
+        let has_source: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('history') WHERE name = 'source'")?
+            .exists([])?;
+        if !has_source {
+            conn.execute("ALTER TABLE history ADD COLUMN source TEXT", [])?;
+        }
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -258,6 +268,16 @@ impl SqliteStorage {
         req: &HttpRequest,
         res: &HttpResponse,
     ) -> Result<Uuid, RustmanError> {
+        self.save_history_with_source(req, res, None)
+    }
+
+    /// Like [`save_history`](Self::save_history), tagging the entry with who issued the request.
+    pub fn save_history_with_source(
+        &self,
+        req: &HttpRequest,
+        res: &HttpResponse,
+        source: Option<&str>,
+    ) -> Result<Uuid, RustmanError> {
         let id = Uuid::new_v4();
         let method = serde_json::to_value(req.method)?
             .as_str()
@@ -267,8 +287,8 @@ impl SqliteStorage {
         let response_data = serde_json::to_string(res)?;
         self.conn()?.execute(
             "INSERT INTO history (id, request_id, request_name, url, method, status, elapsed_ms,
-             request_data, response_data, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             request_data, response_data, created_at, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 id.to_string(),
                 req.id.to_string(),
@@ -280,6 +300,7 @@ impl SqliteStorage {
                 request_data,
                 response_data,
                 Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
+                source,
             ],
         )?;
         Ok(id)
@@ -290,7 +311,7 @@ impl SqliteStorage {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, request_id, request_name, url, method, status, elapsed_ms,
-                    request_data, response_data, created_at
+                    request_data, response_data, created_at, source
              FROM history ORDER BY created_at DESC, rowid DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit as i64], |r| {
@@ -305,11 +326,12 @@ impl SqliteStorage {
                 r.get::<_, String>(7)?,
                 r.get::<_, String>(8)?,
                 r.get::<_, String>(9)?,
+                r.get::<_, Option<String>>(10)?,
             ))
         })?;
         let mut out = Vec::new();
         for row in rows {
-            let (id, rid, rname, url, method, status, elapsed, req, res, created) = row?;
+            let (id, rid, rname, url, method, status, elapsed, req, res, created, source) = row?;
             out.push(HistoryEntry {
                 id: parse_uuid(&id)?,
                 request_id: rid.as_deref().map(parse_uuid).transpose()?,
@@ -321,6 +343,7 @@ impl SqliteStorage {
                 request: serde_json::from_str(&req)?,
                 response: serde_json::from_str(&res)?,
                 created_at: parse_time(&created)?,
+                source,
             });
         }
         Ok(out)
@@ -452,6 +475,32 @@ mod tests {
         assert_eq!(h[0].elapsed_ms, 42);
         assert_eq!(h[0].request, req);
         assert_eq!(h[0].response, res);
+    }
+
+    #[test]
+    fn history_records_source() {
+        let s = SqliteStorage::new_in_memory().unwrap();
+        let req = HttpRequest::new("A", HttpMethod::GET, "https://example.com");
+        s.save_history_with_source(&req, &sample_response(200), Some("agent:claude")).unwrap();
+        s.save_history(&req, &sample_response(200)).unwrap();
+        let h = s.list_history(10).unwrap();
+        assert_eq!(h[0].source, None);
+        assert_eq!(h[1].source.as_deref(), Some("agent:claude"));
+    }
+
+    #[test]
+    fn old_database_gets_source_column() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE history (id TEXT PRIMARY KEY, request_id TEXT, request_name TEXT, url TEXT NOT NULL,
+             method TEXT NOT NULL, status INTEGER NOT NULL, elapsed_ms INTEGER NOT NULL,
+             request_data TEXT NOT NULL, response_data TEXT NOT NULL, created_at TEXT NOT NULL);",
+        )
+        .unwrap();
+        let s = SqliteStorage::from_connection(conn).unwrap();
+        let req = HttpRequest::new("A", HttpMethod::GET, "https://example.com");
+        s.save_history_with_source(&req, &sample_response(200), Some("x")).unwrap();
+        assert_eq!(s.list_history(1).unwrap()[0].source.as_deref(), Some("x"));
     }
 
     #[test]

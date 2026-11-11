@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import {
-  BookOpen, ChevronDown, ChevronRight, Database, FileCode, Folder, FolderOpen, History as HistoryIcon,
+  Bot, BookOpen, ChevronDown, ChevronRight, Database, FileCode, Folder, FolderOpen, History as HistoryIcon,
   Layers, Play, Search, Settings, Trash2, Upload, X,
 } from "lucide-react";
 import { api } from "./api";
@@ -165,6 +165,7 @@ export function Sidebar(p: {
             <li key={h.id}>
               <div className="node req" onClick={() => p.onOpen(h.request)}>
                 <MethodBadge method={h.method} />
+                {h.source && <span className="agent-mark" title={`Sent by ${h.source.replace("agent:", "")}`}><Bot size={12} /></span>}
                 <span className="node-name hurl">{h.url}</span>
                 <span className={`hstatus ${h.status < 400 ? "ok" : "bad"}`}>{h.status}</span>
               </div>

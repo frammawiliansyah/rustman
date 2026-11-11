@@ -28,6 +28,10 @@ rustman-desktop --headless   # backend only, then open the printed URL in a brow
 
 Installer options (environment variables): `RUSTMAN_NO_DESKTOP=1` installs the CLI only, `RUSTMAN_VERSION=vX.Y.Z` picks a version, `RUSTMAN_UNINSTALL=1` removes Rustman.
 
+### Use with AI agents
+
+Connect an MCP client, for example `claude mcp add rustman -- rustman mcp`. The desktop app then shows every request the agent makes. See the [README](https://github.com/frammawiliansyah/rustman#use-with-ai-agents-mcp).
+
 ### Manual download
 
 | Platform | CLI | Desktop app |

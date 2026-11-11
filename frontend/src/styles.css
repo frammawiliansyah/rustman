@@ -295,3 +295,10 @@ kbd { font: 11px var(--mono); background: var(--card); border: 1px solid var(--b
   .gql-right { border-left: none; padding-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+/* AI agent activity */
+.agent-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  color: #fff; background: linear-gradient(180deg, #7578f5, var(--accent)); box-shadow: 0 0 0 0 var(--accent-glow); animation: agent-pulse 1.6s ease-out infinite; }
+.agent-mark { display: inline-flex; align-items: center; color: var(--accent-2); flex: none; }
+@keyframes agent-pulse { 0% { box-shadow: 0 0 0 0 var(--accent-glow); } 100% { box-shadow: 0 0 0 10px rgba(99, 102, 241, 0); } }
+@media (prefers-reduced-motion: reduce) { .agent-badge { animation: none; } }

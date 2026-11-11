@@ -3241,11 +3241,12 @@ dependencies = [
 
 [[package]]
 name = "rustman-cli"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
  "colored",
+ "reqwest",
  "rustman-core",
  "serde",
  "serde_json",
@@ -3255,7 +3256,7 @@ dependencies = [
 
 [[package]]
 name = "rustman-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3281,7 +3282,7 @@ dependencies = [
 
 [[package]]
 name = "rustman-desktop"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "axum",
  "clap",

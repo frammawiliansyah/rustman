@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Plug, PlugZap, Send, Trash2, Wifi } from "lucide-react";
 import { Spinner } from "./ui";
+import { withToken } from "./api";
 import type { WsMessage } from "./types";
 
 interface Entry { id: number; dir: "in" | "out" | "sys"; label: string; text: string; time: string }
@@ -30,7 +31,7 @@ export function RealtimePane({ kind }: { kind: "ws" | "sse" }) {
     const target = encodeURIComponent(url.trim());
     setConnecting(true);
     if (isWs) {
-      const ws = new WebSocket(`${wsOrigin()}/api/ws/connect?target=${target}`);
+      const ws = new WebSocket(withToken(`${wsOrigin()}/api/ws/connect?target=${target}`));
       wsRef.current = ws;
       ws.onopen = () => { setConnecting(false); setConnected(true); push({ dir: "sys", label: "SYS", text: `Connected to ${url}` }); };
       ws.onmessage = (ev) => {
@@ -43,7 +44,7 @@ export function RealtimePane({ kind }: { kind: "ws" | "sse" }) {
       ws.onerror = () => push({ dir: "sys", label: "ERR", text: "Connection error" });
       ws.onclose = () => { setConnecting(false); setConnected(false); push({ dir: "sys", label: "SYS", text: "Disconnected" }); wsRef.current = null; };
     } else {
-      const es = new EventSource(`/api/sse/connect?target=${target}`);
+      const es = new EventSource(withToken(`/api/sse/connect?target=${target}`));
       esRef.current = es;
       es.onopen = () => { setConnecting(false); setConnected(true); push({ dir: "sys", label: "SYS", text: `Listening on ${url}` }); };
       es.onmessage = (ev) => push({ dir: "in", label: "message", text: ev.data });

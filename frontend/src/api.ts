@@ -1,7 +1,20 @@
 import type { KV, Collection, Cookie, SnippetTarget, Environment, ExecuteReply, HistoryEntry, HttpRequest, GqlSchema } from "./types";
 
+declare global {
+  interface Window { __RUSTMAN_TOKEN__?: string }
+}
+
+/** Access token the backend embeds in index.html. Empty in `pnpm dev`, where the proxy adds it. */
+const token = () => window.__RUSTMAN_TOKEN__ ?? "";
+
+/** For EventSource and WebSocket, which cannot set headers. */
+export const withToken = (url: string) =>
+  token() ? `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token())}` : url;
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`/api${path}`, init);
+  const headers = new Headers(init?.headers);
+  if (token()) headers.set("Authorization", `Bearer ${token()}`);
+  const res = await fetch(`/api${path}`, { ...init, headers });
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`;
     try {
