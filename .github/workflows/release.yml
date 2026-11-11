@@ -134,3 +134,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file notes.md
+      - name: Publish binaries to the dist branch
+        run: |
+          mkdir pub
+          cp dist/* pub/
+          cp scripts/install-macos.sh pub/
+          echo "$GITHUB_REF_NAME" > pub/VERSION
+          cd pub
+          git init -q -b dist
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -q -m "Release $GITHUB_REF_NAME"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" dist

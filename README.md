@@ -123,15 +123,14 @@ Each [GitHub release](../../releases) includes:
 
 ### Installing on macOS
 
-The easiest way is the install script. It does not need `git` or the GitHub CLI, only `curl`, and nothing from the repository is left on your Mac. Because the repository is private, create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with read-only **Contents** access to this repository, then run:
+The easiest way is the install script. It uses your existing SSH key, so you only need `git`. It clones the `dist` branch (release binaries only) into a temporary folder, installs, and deletes the folder, so no copy of the repository stays on your Mac:
 
 ```sh
-export GITHUB_TOKEN=github_pat_xxx
-curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.raw+json" \
-  https://api.github.com/repos/frammawiliansyah/rustman/contents/scripts/install-macos.sh | bash
+d=$(mktemp -d) && git clone -q --depth 1 -b dist git@github.com:frammawiliansyah/rustman.git "$d" \
+  && bash "$d/install-macos.sh"; rm -rf "$d"
 ```
 
-Pass a tag to install a specific version, for example `... | bash -s v0.1.0`. To update, run the same command again.
+To update, run the same command again. The `dist` branch always holds the latest release; older versions are available from the GitHub release page.
 
 It picks the right build for your Mac (Apple Silicon or Intel) and installs:
 

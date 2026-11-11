@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
-# Install the latest Rustman release on macOS without cloning the repository.
+# Install Rustman on macOS from the `dist` branch, over SSH, without keeping a clone.
 #
 #   - Rustman.app      -> /Applications (shows up in Launchpad and Spotlight)
 #   - rustman          -> ~/.local/bin  (CLI runner)
 #   - rustman-desktop  -> ~/.local/bin  (launches the desktop app from zsh)
 #
-# Usage:
-#   GITHUB_TOKEN=<token> bash install-macos.sh [vX.Y.Z]
+# One-liner (needs an SSH key with access to the repository):
 #
-# The repository is private, so GITHUB_TOKEN must be a token that can read it
-# (fine-grained token with "Contents: read" on this repository). If the
-# repository is public, no token is needed. Only curl, tar, unzip and
-# osascript are used, all of which ship with macOS.
+#   d=$(mktemp -d) && git clone -q --depth 1 -b dist git@github.com:frammawiliansyah/rustman.git "$d" \
+#     && bash "$d/install-macos.sh"; rm -rf "$d"
+#
+# The script expects the release archives to sit next to it, which is how the
+# `dist` branch is laid out. Re-run the same command to update.
 set -euo pipefail
 
-REPO="frammawiliansyah/rustman"
-TAG="${1:-}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 APP_DIR="${APP_DIR:-/Applications}"
-API="https://api.github.com/repos/$REPO"
 
 [ "$(uname -s)" = "Darwin" ] || { echo "This installer is for macOS only." >&2; exit 1; }
 
@@ -28,58 +26,23 @@ case "$(uname -m)" in
   *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
-auth=()
-[ -n "${GITHUB_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
+app_zip="$(ls "$HERE"/rustman-desktop-v*-"$TARGET".zip 2>/dev/null | head -n1 || true)"
+cli_tgz="$(ls "$HERE"/rustman-v*-"$TARGET".tar.gz 2>/dev/null | head -n1 || true)"
+[ -n "$app_zip" ] && [ -n "$cli_tgz" ] || { echo "No macOS archives for $TARGET next to the installer." >&2; exit 1; }
 
-api_get() { curl -fsSL "${auth[@]+"${auth[@]}"}" -H "Accept: application/vnd.github+json" "$1"; }
-
-if [ -n "$TAG" ]; then
-  release_url="$API/releases/tags/$TAG"
-else
-  release_url="$API/releases/latest"
-fi
-
-echo "Looking up release ${TAG:-latest}..."
-release_json="$(api_get "$release_url")" || {
-  echo "Could not read the release. Is GITHUB_TOKEN set and allowed to read $REPO?" >&2
-  exit 1
-}
-
-# Print the API URL of the asset whose name matches the given regex.
-asset_url() {
-  RELEASE_JSON="$release_json" PATTERN="$1" osascript -l JavaScript -e '
-    ObjC.import("stdlib");
-    const rel = JSON.parse($.getenv("RELEASE_JSON"));
-    const re = new RegExp($.getenv("PATTERN"));
-    const a = rel.assets.find(x => re.test(x.name));
-    a ? a.url : "";
-  '
-}
-
-app_url="$(asset_url "^rustman-desktop-.*-$TARGET\\.zip\$")"
-cli_url="$(asset_url "^rustman-v.*-$TARGET\\.tar\\.gz\$")"
-[ -n "$app_url" ] && [ -n "$cli_url" ] || { echo "No macOS assets for $TARGET in this release." >&2; exit 1; }
+echo "Installing ${VERSION:-$(cat "$HERE/VERSION" 2>/dev/null || echo unknown)} for $TARGET..."
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-download() {
-  curl -fSL --progress-bar "${auth[@]+"${auth[@]}"}" -H "Accept: application/octet-stream" -o "$2" "$1"
-}
-
-echo "Downloading desktop app..."
-download "$app_url" "$tmp/app.zip"
-echo "Downloading CLI..."
-download "$cli_url" "$tmp/cli.tar.gz"
-
 # Desktop app
-unzip -q "$tmp/app.zip" -d "$tmp"
+unzip -q "$app_zip" -d "$tmp"
 rm -rf "$APP_DIR/Rustman.app"
 mv "$tmp/Rustman.app" "$APP_DIR/Rustman.app"
 xattr -dr com.apple.quarantine "$APP_DIR/Rustman.app" 2>/dev/null || true
 
 # CLI
-tar xzf "$tmp/cli.tar.gz" -C "$tmp"
+tar xzf "$cli_tgz" -C "$tmp"
 mkdir -p "$BIN_DIR"
 install -m 755 "$tmp"/rustman-v*/rustman "$BIN_DIR/rustman"
 xattr -d com.apple.quarantine "$BIN_DIR/rustman" 2>/dev/null || true
