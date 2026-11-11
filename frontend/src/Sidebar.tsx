@@ -133,7 +133,7 @@ export function Sidebar(p: {
     <aside className="sidebar">
       <div className="brand">
         <span className="brand-logo">
-          <svg viewBox="190 230 644 590" width="18" height="18" aria-hidden="true">
+          <svg viewBox="12 25 1000 1000" width="24" height="24" aria-hidden="true">
             <g fill="none" stroke="currentColor" strokeWidth="40" strokeLinecap="round" strokeLinejoin="round">
               <path d="M352 612L262 664L236 746M672 612L762 664L788 746M372 656L308 728L300 800M652 656L716 728L724 800" />
               <path d="M356 540C290 520 262 470 270 400M668 540C734 520 762 470 754 400" strokeWidth="50" />
