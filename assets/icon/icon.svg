@@ -1,24 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <title>Rustman</title>
-  <defs>
-    <!-- Dark tile in the app's own palette: bg #0b0d11, panel #161b26, accent #6366f1 / #818cf8 -->
-    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2230"/><stop offset="1" stop-color="#090b10"/></linearGradient>
-    <radialGradient id="glow" cx="50%" cy="48%" r="56%"><stop offset="0" stop-color="#6366f1" stop-opacity=".55"/><stop offset=".6" stop-color="#6366f1" stop-opacity=".12"/><stop offset="1" stop-color="#6366f1" stop-opacity="0"/></radialGradient>
-    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#818cf8" stop-opacity=".55"/><stop offset=".5" stop-color="#323b52" stop-opacity=".6"/><stop offset="1" stop-color="#323b52" stop-opacity=".4"/></linearGradient>
-    <linearGradient id="hex" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8f99ff"/><stop offset=".55" stop-color="#6366f1"/><stop offset="1" stop-color="#4338ca"/></linearGradient>
-    <linearGradient id="bolt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#dfe3ff"/></linearGradient>
-    <filter id="hexglow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="0" stdDeviation="34" flood-color="#6366f1" flood-opacity=".75"/></filter>
-    <filter id="lift" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="16" stdDeviation="14" flood-color="#1e1b6e" flood-opacity=".6"/></filter>
-  </defs>
-  <rect width="1024" height="1024" rx="230" fill="url(#tile)"/>
-  <rect width="1024" height="1024" rx="230" fill="url(#glow)"/>
-  <rect x="3" y="3" width="1018" height="1018" rx="227" fill="none" stroke="url(#rim)" stroke-width="6"/>
-  <polygon points="512.0,162.0 815.1,337.0 815.1,687.0 512.0,862.0 208.9,687.0 208.9,337.0" fill="url(#hex)" stroke="url(#hex)" stroke-width="48" stroke-linejoin="round" filter="url(#hexglow)"/>
-  <polygon points="512.0,182.0 797.8,347.0 797.8,677.0 512.0,842.0 226.2,677.0 226.2,347.0" fill="none" stroke="#ffffff" stroke-opacity=".3" stroke-width="8" stroke-linejoin="round"/>
-  <g fill="none" stroke="#ffffff" stroke-opacity=".92" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Flat icon, colors taken from the app UI: panel #12161f, border #323b52, accent #6366f1 / #818cf8, text #e8ebf3 -->
+  <rect width="1024" height="1024" rx="230" fill="#12161f"/>
+  <rect x="3" y="3" width="1018" height="1018" rx="227" fill="none" stroke="#323b52" stroke-width="6"/>
+  <!-- Hexagon (a metal nut): a darker copy below adds depth with flat colors only -->
+  <polygon points="512.0,184.0 815.1,359.0 815.1,709.0 512.0,884.0 208.9,709.0 208.9,359.0" fill="#4338ca" stroke="#4338ca" stroke-width="48" stroke-linejoin="round"/>
+  <polygon points="512.0,162.0 815.1,337.0 815.1,687.0 512.0,862.0 208.9,687.0 208.9,337.0" fill="#6366f1" stroke="#6366f1" stroke-width="48" stroke-linejoin="round"/>
+  <polygon points="512.0,182.0 797.8,347.0 797.8,677.0 512.0,842.0 226.2,677.0 226.2,347.0" fill="none" stroke="#818cf8" stroke-width="8" stroke-linejoin="round"/>
+  <!-- Curly braces: API -->
+  <g fill="none" stroke="#e8ebf3" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
     <path d="M358 352C318 352 332 468 296 512C332 556 318 672 358 672"/>
     <path d="M666 352C706 352 692 468 728 512C692 556 706 672 666 672"/>
   </g>
-  <polygon points="560,324 450,534 520,534 466,700 600,486 534,486" fill="url(#bolt)" stroke="url(#bolt)" stroke-width="22" stroke-linejoin="round" filter="url(#lift)"/>
-
+  <!-- Lightning bolt: speed -->
+  <polygon points="560,324 450,534 520,534 466,700 600,486 534,486" fill="#ffffff" stroke="#ffffff" stroke-width="22" stroke-linejoin="round"/>
 </svg>
