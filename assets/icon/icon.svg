@@ -1,17 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <title>Rustman</title>
-  <!-- Flat icon, colors taken from the app UI: panel #12161f, border #323b52, accent #6366f1 / #818cf8, text #e8ebf3 -->
-  <rect width="1024" height="1024" rx="230" fill="#12161f"/>
-  <rect x="3" y="3" width="1018" height="1018" rx="227" fill="none" stroke="#323b52" stroke-width="6"/>
-  <!-- Hexagon (a metal nut): a darker copy below adds depth with flat colors only -->
-  <polygon points="512.0,184.0 815.1,359.0 815.1,709.0 512.0,884.0 208.9,709.0 208.9,359.0" fill="#4338ca" stroke="#4338ca" stroke-width="48" stroke-linejoin="round"/>
-  <polygon points="512.0,162.0 815.1,337.0 815.1,687.0 512.0,862.0 208.9,687.0 208.9,337.0" fill="#6366f1" stroke="#6366f1" stroke-width="48" stroke-linejoin="round"/>
-  <polygon points="512.0,182.0 797.8,347.0 797.8,677.0 512.0,842.0 226.2,677.0 226.2,347.0" fill="none" stroke="#818cf8" stroke-width="8" stroke-linejoin="round"/>
-  <!-- Curly braces: API -->
-  <g fill="none" stroke="#e8ebf3" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M358 352C318 352 332 468 296 512C332 556 318 672 358 672"/>
-    <path d="M666 352C706 352 692 468 728 512C692 556 706 672 666 672"/>
-  </g>
-  <!-- Letter R between the braces -->
-  <path d="M458 388V636M458 388H520A62 62 0 0 1 520 512H458M524 512L586 636" fill="none" stroke="#ffffff" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Flat round badge with one bold letter, colors from the app UI: accent #6366f1 / #818cf8, dark #4338ca -->
+  <circle cx="512" cy="512" r="500" fill="#6366f1"/>
+  <circle cx="512" cy="512" r="470" fill="none" stroke="#818cf8" stroke-width="10"/>
+  <!-- Letter R -->
+  <path transform="translate(-18 0)" d="M404 292V736M404 292H560A112 112 0 0 1 560 516H404M548 516L672 736" fill="none" stroke="#ffffff" stroke-width="100" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

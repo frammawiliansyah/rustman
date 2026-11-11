@@ -93,7 +93,7 @@ kbd { font: 11px var(--mono); background: var(--card); border: 1px solid var(--b
 /* ---------- sidebar ---------- */
 .sidebar { background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; padding: 10px; gap: 8px; }
 .brand { display: flex; align-items: center; gap: 8px; padding: 2px 4px 4px; font-size: 14px; letter-spacing: -.01em; }
-.brand-logo { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: #fff; background: var(--accent); }
+.brand-logo { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: #fff; background: var(--accent); }
 .env { display: flex; gap: 4px; align-items: center; }
 .env select { flex: 1; }
 .search { position: relative; display: flex; align-items: center; color: var(--faint); }

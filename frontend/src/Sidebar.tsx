@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import {
-  Bot, BookOpen, ChevronDown, ChevronRight, Database, FileCode, Folder, FolderOpen, History as HistoryIcon,
+  Bot, BookOpen, ChevronDown, ChevronRight, FileCode, Folder, FolderOpen, History as HistoryIcon,
   Layers, Play, Search, Settings, Trash2, Upload, X,
 } from "lucide-react";
 import { api } from "./api";
@@ -132,7 +132,9 @@ export function Sidebar(p: {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <span className="brand-logo"><Database size={14} /></span>
+        <span className="brand-logo">
+          <svg viewBox="0 0 1024 1024" width="14" height="14" aria-hidden="true"><path transform="translate(-18 0)" d="M404 292V736M404 292H560A112 112 0 0 1 560 516H404M548 516L672 736" fill="none" stroke="currentColor" strokeWidth="110" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </span>
         <b>Rustman</b>
       </div>
       <div className="env">
