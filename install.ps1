@@ -58,9 +58,13 @@ try {
     }
 
     $cli = Get-Verified "rustman-$target.zip"
-    Remove-Item -Recurse -Force $binDir -ErrorAction SilentlyContinue
     Expand-Archive $cli -DestinationPath $tmp -Force
     New-Item -ItemType Directory $binDir -Force | Out-Null
+    # `rustman update` runs this script while rustman.exe is still running. Windows cannot
+    # overwrite a running program but allows renaming it, so move the old one aside.
+    Get-ChildItem $binDir -Filter "*.old" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    $current = Join-Path $binDir "rustman.exe"
+    if (Test-Path $current) { Move-Item $current "$current.old" -Force }
     Copy-Item (Join-Path $tmp "rustman-$target\rustman.exe") $binDir -Force
     Update-UserPath $binDir $null
 
@@ -76,6 +80,8 @@ try {
         $lnk = $ws.CreateShortcut($shortcut)
         $lnk.TargetPath = Join-Path $appDir "rustman-desktop.exe"
         $lnk.WorkingDirectory = $appDir
+        $ico = Join-Path $appDir "rustman.ico"
+        if (Test-Path $ico) { $lnk.IconLocation = $ico }
         $lnk.Save()
     }
 }

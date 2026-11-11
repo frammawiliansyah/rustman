@@ -43,7 +43,8 @@ uninstall() {
   if [ "$OS" = "Darwin" ]; then
     rm -rf /Applications/Rustman.app "$HOME/Applications/Rustman.app" 2>/dev/null || true
   else
-    rm -rf "$SHARE_DIR/rustman" "$SHARE_DIR/applications/rustman.desktop"
+    rm -rf "$SHARE_DIR/rustman" "$SHARE_DIR/applications/rustman.desktop" \
+      "$SHARE_DIR/icons/hicolor/512x512/apps/rustman.png"
   fi
   say "Rustman removed. Your data in ~/.rustman was kept."
   exit 0
@@ -110,12 +111,17 @@ if [ "${RUSTMAN_NO_DESKTOP:-}" != "1" ]; then
     mkdir -p "$SHARE_DIR/rustman" "$SHARE_DIR/applications"
     cp -R "$TMP/rustman-desktop-$TARGET/." "$SHARE_DIR/rustman/"
     ln -sf "$SHARE_DIR/rustman/rustman-desktop" "$BIN_DIR/rustman-desktop"
+    if [ -f "$SHARE_DIR/rustman/rustman.png" ]; then
+      mkdir -p "$SHARE_DIR/icons/hicolor/512x512/apps"
+      cp "$SHARE_DIR/rustman/rustman.png" "$SHARE_DIR/icons/hicolor/512x512/apps/rustman.png"
+    fi
     cat > "$SHARE_DIR/applications/rustman.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=Rustman
 Comment=API client
 Exec=$SHARE_DIR/rustman/rustman-desktop
+Icon=rustman
 Terminal=false
 Categories=Development;Network;
 DESKTOP

@@ -85,6 +85,7 @@ jobs:
           name=rustman-desktop-x86_64-unknown-linux-gnu
           mkdir "$name"
           cp target/release/rustman-desktop LICENSE "$name"/
+          cp assets/icon/icon-512.png "$name/rustman.png"
           cp -R frontend/dist "$name/dist"
           tar czf "$name.tar.gz" "$name"
           echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
@@ -119,7 +120,7 @@ jobs:
         run: |
           $name = "rustman-desktop-x86_64-pc-windows-msvc"
           New-Item -ItemType Directory $name | Out-Null
-          Copy-Item target/release/rustman-desktop.exe, LICENSE $name
+          Copy-Item target/release/rustman-desktop.exe, LICENSE, assets/icon/rustman.ico $name
           Copy-Item -Recurse frontend/dist "$name/dist"
           Compress-Archive $name "$name.zip"
           "ASSET=$name.zip" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
@@ -162,6 +163,7 @@ jobs:
           cp target/${{ matrix.target }}/release/rustman-desktop "$app/Contents/MacOS/rustman-desktop"
           cp -R frontend/dist "$app/Contents/Resources/dist"
           cp LICENSE "$app/Contents/Resources/LICENSE"
+          cp assets/icon/rustman.icns "$app/Contents/Resources/rustman.icns"
           cat > "$app/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -171,6 +173,7 @@ jobs:
             <key>CFBundleDisplayName</key><string>Rustman</string>
             <key>CFBundleIdentifier</key><string>dev.rustman.app</string>
             <key>CFBundleExecutable</key><string>rustman-desktop</string>
+            <key>CFBundleIconFile</key><string>rustman</string>
             <key>CFBundlePackageType</key><string>APPL</string>
             <key>CFBundleVersion</key><string>$version</string>
             <key>CFBundleShortVersionString</key><string>$version</string>

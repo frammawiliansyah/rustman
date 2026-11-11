@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/icon/icon-256.png" alt="Rustman logo" width="128" height="128">
+
 # Rustman
 
 **A fast, open-source API client and test runner written in Rust.**
@@ -58,6 +60,17 @@ The Linux desktop app also needs WebKitGTK 4.1 and GTK 3:
 sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 libxdo3   # Debian, Ubuntu
 sudo dnf install webkit2gtk4.1 gtk3 xdotool              # Fedora, RHEL, CentOS
 ```
+
+### Update
+
+```sh
+rustman update            # install the latest release
+rustman update --check    # only check whether a newer version exists
+rustman update --to v0.2.0   # install a specific version
+rustman --update          # same as `rustman update`
+```
+
+`rustman update` looks up the latest GitHub release and runs the installer from that release, so the CLI and the desktop app are updated together, with checksum verification. If the desktop app was never installed, it stays CLI-only. Quit the desktop app before updating; the command stops with a message if it is still running. You can always rerun the install command instead. Rustman never checks for updates on its own.
 
 <details>
 <summary>Installer options, manual download and uninstall</summary>

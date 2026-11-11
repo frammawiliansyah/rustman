@@ -653,6 +653,17 @@ fn resolve_dist() -> PathBuf {
     local
 }
 
+/// Window and taskbar icon. macOS takes its icon from the app bundle instead, where this is ignored.
+fn window_icon() -> Option<tao::window::Icon> {
+    let mut reader = png::Decoder::new(&include_bytes!("../../../assets/icon/icon-256.png")[..]).read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
+    if info.color_type != png::ColorType::Rgba || info.bit_depth != png::BitDepth::Eight {
+        return None;
+    }
+    tao::window::Icon::from_rgba(buf[..info.buffer_size()].to_vec(), info.width, info.height).ok()
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use clap::Parser;
     tracing_subscriber::fmt().init();
@@ -692,6 +703,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = tao::event_loop::EventLoop::new();
     let window = tao::window::WindowBuilder::new()
         .with_title("Rustman - API Client")
+        .with_window_icon(window_icon())
         .with_inner_size(tao::dpi::LogicalSize::new(1280.0, 820.0))
         .with_min_inner_size(tao::dpi::LogicalSize::new(960.0, 600.0))
         .build(&event_loop)?;
@@ -880,6 +892,11 @@ mod tests {
         let base = spawn(PathBuf::from("/nonexistent")).await;
         let body = reqwest::get(&base).await.unwrap().text().await.unwrap();
         assert!(body.contains("rustman backend is running"));
+    }
+
+    #[test]
+    fn window_icon_decodes() {
+        assert!(window_icon().is_some());
     }
 
     #[test]

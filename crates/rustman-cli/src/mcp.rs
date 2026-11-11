@@ -175,7 +175,7 @@ impl Backend {
 }
 
 /// Looks for the desktop binary next to this executable, on PATH and in the usual install locations.
-fn find_desktop() -> Option<PathBuf> {
+pub(crate) fn find_desktop() -> Option<PathBuf> {
     let name = if cfg!(windows) { "rustman-desktop.exe" } else { "rustman-desktop" };
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(PathBuf::from)) {

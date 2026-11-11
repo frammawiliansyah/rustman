@@ -2,6 +2,7 @@ mod load;
 mod mcp;
 mod reporter;
 mod runner;
+mod update;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -87,6 +88,18 @@ enum Command {
         #[arg(short, long, value_enum, default_value_t = DocFormat::Html)]
         format: DocFormat,
     },
+    /// Check for a newer release and install it (also: `rustman --update`)
+    Update {
+        /// Only check whether a newer version exists
+        #[arg(long)]
+        check: bool,
+        /// Install this release (for example v0.2.0) instead of the latest
+        #[arg(long, value_name = "TAG")]
+        to: Option<String>,
+        /// Reinstall even when already up to date
+        #[arg(long)]
+        force: bool,
+    },
     /// Run an MCP server on stdio so AI agents can drive the Rustman desktop app
     Mcp {
         /// Address the Rustman desktop backend listens on
@@ -150,7 +163,12 @@ fn load_iteration_data(path: &std::path::Path) -> Result<IterationDataset> {
 }
 
 async fn real_main() -> Result<i32> {
-    match Cli::parse().command {
+    // `rustman --update` is a shortcut for `rustman update`.
+    let mut args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--update") {
+        args[1] = "update".into();
+    }
+    match Cli::parse_from(args).command {
         Command::Run { collection_path, environment, delay, bail, reporter, reporter_html_path, expect_status, max_time, iteration_data, iteration_count } => {
             let collection = load::load_collection(&collection_path)?;
             let env = environment.as_deref().map(load::load_environment).transpose()?;
@@ -226,6 +244,7 @@ async fn real_main() -> Result<i32> {
             }
             Ok(0)
         }
+        Command::Update { check, to, force } => update::run(update::UpdateOptions { check, to, force }).await,
         Command::Mcp { host, port, no_launch } => {
             let port = port
                 .or_else(|| std::env::var("RUSTMAN_PORT").ok().and_then(|p| p.parse().ok()))
