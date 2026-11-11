@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Flat design: no gradients anywhere. The UI uses solid colors for buttons, the logo tile, the active tab indicator, the progress bar, the agent badge and the AI Agents page, and the loading skeleton pulses instead of shimmering
 - New app icon in the dark theme of the app: an indigo hexagon (a metal nut, for Rust and strength) holding curly braces with the letter R in between, on a flat dark tile, using only the app's own colors, with no gradients
+- Simpler AI Agents page: a short intro, two numbered steps (connect, ask), one safety line, and the tool list and access token folded away until needed
 
 ## [0.4.0] - 2026-11-11
 
